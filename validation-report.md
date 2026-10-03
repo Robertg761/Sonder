@@ -1,4 +1,4 @@
-# Sonder 1.2.0 validation
+# Sonder 1.3.0 validation
 
 Native Android application, package `app.sonder.audiobooks`. Android 9+ (min SDK 28), target SDK 36. Tests ran on an isolated Android 16/API 36 x86_64 emulator. No physical phone was attached.
 
@@ -6,16 +6,17 @@ Native Android application, package `app.sonder.audiobooks`. Android 9+ (min SDK
 
 - Debug APK, optimized release APK, release AAB, and test APK built successfully with Java 17 and Gradle 8.14.3.
 - Seven JVM tests passed: Nero MP4 chapters, real QuickTime chapter tracks, ID3 CHAP, multi-file CUE, malformed MP4 data, natural filename sorting, and real length-prefixed FLAC/Vorbis/Opus comments with long chapter names.
-- Twenty Android integration tests passed: actual MP4 import and chapter metadata, eight common audio formats, transactional rollback, progress/bookmark remapping after track insertion, mixed-folder album grouping, recursive document-provider scanning/CUE/duplicate detection, service playback and timer behavior, and landscape/200% text layouts.
+- Twenty-four Android integration tests passed: actual MP4 import and chapter metadata, eight common audio formats, transactional rollback, progress/bookmark remapping after track insertion, mixed-folder album grouping, recursive document-provider scanning/CUE/duplicate detection, service playback and timer behavior, and landscape/200% text layouts.
 - New tests covered long presses on Continue Listening and grid/list rows; not-started/in-progress/finished filters; resetting an actively playing book without a late autosave restoring progress; bookmark/listening-statistics retention; status backup and reopening; migration from the version-two database; actual MediaStore audio/video discovery; selective import through the scan sheet; and duplicate identity between the media index and Android document picker.
 - Player test confirmed a media notification, playback after the Activity entered the background, persisted progress, bookmark note input, 1.5× speed, chapter-end pause, and Activity recreation.
 - Six reading-history tests covered independent manual/partial records, editing and deletion, durable completion prompts and declining them, rereads, idempotent saves/restores, history backup without audio, malformed-data rollback, version-three migration, activity recreation with unsaved input, and completion while the Activity was in the background. Resetting or removing a library book preserves saved reading entries.
 - Manual signed-release smoke test imported a video-and-audio MP4 in version 1.1 through Android's real system document picker, then installed version 1.2 over it without uninstalling. The imported book remained available. Holding the book and marking it finished showed the opt-in prompt; accepting and saving created a 100% reading record in History. Earlier release checks also confirmed three embedded chapters and background media-session playback.
-- Release lint completed with **0 errors and 20 warnings**. Warnings concern pinned dependency/target versions, optional Kotlin extension style, and backup declaration advice; automatic system backup is disabled in the manifest.
-- Release manifest inspection confirmed no Internet permission, debugging, or test document providers.
+- Release lint completed with **0 errors and 27 warnings**. Warnings concern pinned dependency/target versions, Kotlin extension style, API modernization advice, unused provider namespace, and backup declaration advice; automatic system backup is disabled in the manifest.
+- Release manifest inspection confirmed the new Internet and package-install permissions, a non-exported update FileProvider restricted to its download subdirectory, no debugging, and no test document providers. Cleartext traffic is disabled.
+- Four updater tests covered stable/newer version selection, stored download metadata, rejected prereleases/older releases, invalid URLs/checksums/sizes, corrupted APKs, rejection of an already installed APK, and restricted FileProvider paths. The GitHub signing script passed locally with the original release certificate.
 - APK signature verification succeeded using APK Signature Scheme v3, with an RSA 3072-bit dedicated release key. AAB JAR signature verification also succeeded. Android signing certificates are self-signed; the standard JAR trust/timestamp warnings do not mean the signature failed.
 
-Version 1.2 uses the same release certificate as versions 1.0 and 1.1 and a higher versionCode of 3. Installing over the existing app preserves its library.
+Version 1.3 uses the same release certificate as versions 1.0, 1.1, and 1.2 and a higher versionCode of 4. Installing over the existing app preserves its library.
 
 Detailed test logs, the parser test XML, lint report, build log, and APK certificate report are in the accompanying `validation/` directory. Screenshots show test media; the shipped library starts empty.
 
