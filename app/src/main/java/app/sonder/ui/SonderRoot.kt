@@ -65,7 +65,8 @@ import kotlinx.coroutines.launch
     BackHandler(player || settingsOpen || selected>0 || collectionFilter.isNotBlank()) { when { player -> player=false;settingsOpen -> settingsOpen=false;selected>0 -> selected=0;else -> collectionFilter="" } }
     SonderTheme(settings.theme) {
         Surface(Modifier.fillMaxSize()) {
-            if(player && current!=null) PlayerScreen(vm,current,playback,onBack={ player=false },onDetails={ selected=current.id;player=false },onOptions={ optionsBook=current.id })
+            // The player has its own Scaffold, so it needs its own host for notices and Undo.
+            if(player && current!=null) Box(Modifier.fillMaxSize()) { PlayerScreen(vm,current,playback,onBack={ player=false },onDetails={ selected=current.id;player=false },onOptions={ optionsBook=current.id });SnackbarHost(snackbar,Modifier.align(Alignment.BottomCenter).navigationBarsPadding()) }
             else Scaffold(
                 containerColor=MaterialTheme.colorScheme.background,
                 snackbarHost={ SnackbarHost(snackbar) },
