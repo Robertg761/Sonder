@@ -32,7 +32,7 @@ val ReadingDraftSaver=Saver<ReadingEntry?,String>(save={ it?.json()?.toString() 
     var filter by rememberSaveable { mutableStateOf("All reads") }
     var deleting by rememberSaveable { mutableStateOf("") }
     val filtered=entries.filter { (query.isBlank() || listOf(it.title,it.author,it.notes).any { value -> value.contains(query,true) }) && when(filter) { "Completed" -> it.percent==100;"Partial" -> it.percent<100;else -> true } }
-    LazyColumn(contentPadding=PaddingValues(start=24.dp,end=24.dp,top=12.dp,bottom=24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+    LazyColumn(contentPadding=PaddingValues(start=24.dp,end=24.dp,top=16.dp,bottom=24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
         item {
             PageHeader("Reading history","Log finished books and partial reads. Entries stay saved when you reset or remove library books.") { PageAction(Icons.Rounded.EditNote,"Add reading history",onAdd) }
             Spacer(Modifier.height(16.dp))

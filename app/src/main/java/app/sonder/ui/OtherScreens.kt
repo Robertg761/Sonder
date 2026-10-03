@@ -34,7 +34,7 @@ import java.util.Locale
 
 @Composable fun BookmarkScreen(library:Library,onOpen:(Book,Long)->Unit,onDelete:(Long)->Unit,onEdit:(Long,String)->Unit,onOptions:(Book)->Unit) {
     var edit by remember { mutableStateOf<Bookmark?>(null) };var note by remember { mutableStateOf("") }
-    LazyColumn(contentPadding=PaddingValues(start=24.dp,end=24.dp,top=12.dp,bottom=24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+    LazyColumn(contentPadding=PaddingValues(start=24.dp,end=24.dp,top=16.dp,bottom=24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
         item { PageHeader("Bookmarks","The moments worth coming back to.");Spacer(Modifier.height(8.dp)) }
         if(library.bookmarks.isEmpty()) item { EmptyState(Icons.Rounded.BookmarkBorder,"A place for the good parts","Tap Bookmark in the player to save a passage and add your own note.") }
         items(library.bookmarks,key={ it.id }) { mark ->
@@ -57,7 +57,7 @@ import java.util.Locale
     val max=days.maxOf { library.daily[it.toString()] ?: 0 }.coerceAtLeast(goal*60000L)
     var streak=0;var day=if(todayMs>0) today else today.minusDays(1)
     while((library.daily[day.toString()] ?: 0)>0 && streak<10000) { streak++;day=day.minusDays(1) }
-    LazyColumn(contentPadding=PaddingValues(start=24.dp,end=24.dp,top=12.dp,bottom=24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+    LazyColumn(contentPadding=PaddingValues(start=24.dp,end=24.dp,top=16.dp,bottom=24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
         item { PageHeader("Insights","Your listening life, one chapter at a time.");Spacer(Modifier.height(8.dp)) }
         item { Surface(shape=MaterialTheme.shapes.extraLarge,color=MaterialTheme.colorScheme.primaryContainer) { Column(Modifier.fillMaxWidth().padding(22.dp)) {
             Row(verticalAlignment=Alignment.CenterVertically) { Text("TODAY",style=MaterialTheme.typography.labelMedium,letterSpacing=1.5.sp,color=MaterialTheme.colorScheme.onPrimaryContainer,modifier=Modifier.weight(1f));Text("${(todayMs*100/(goal*60000L).coerceAtLeast(1)).coerceAtMost(999)}% of goal",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onPrimaryContainer) }

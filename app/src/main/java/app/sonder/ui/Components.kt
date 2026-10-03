@@ -75,9 +75,11 @@ import kotlin.math.absoluteValue
     }
 }
 @Composable fun SectionTitle(title:String,meta:String="") { Row(Modifier.fillMaxWidth().padding(top=16.dp,bottom=10.dp),verticalAlignment=Alignment.CenterVertically) { Text(title,style=MaterialTheme.typography.headlineSmall,modifier=Modifier.weight(1f));if(meta.isNotBlank()) Text(meta,style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.onSurfaceVariant) } }
+// App-wide actions (Settings) that every tab's title row ends with; provided by SonderRoot.
+val LocalHeaderActions=staticCompositionLocalOf<(@Composable RowScope.()->Unit)?> { null }
 @Composable fun PageHeader(title:String,subtitle:String="",action:(@Composable ()->Unit)?=null) {
     Column(Modifier.fillMaxWidth().padding(bottom=4.dp)) {
-        Row(verticalAlignment=Alignment.CenterVertically) { Text(title,style=MaterialTheme.typography.headlineLarge,modifier=Modifier.weight(1f));if(action!=null) action() }
+        Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(4.dp)) { Text(title,style=MaterialTheme.typography.headlineLarge,modifier=Modifier.weight(1f));if(action!=null) action();LocalHeaderActions.current?.invoke(this) }
         if(subtitle.isNotBlank()) Text(subtitle,style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.padding(top=6.dp))
     }
 }
