@@ -42,6 +42,7 @@ import kotlinx.coroutines.launch
     val playback by vm.playback.collectAsStateWithLifecycle()
     val import by vm.importProgress.collectAsStateWithLifecycle()
     val notice by vm.notice.collectAsStateWithLifecycle()
+    val undo by vm.undo.collectAsStateWithLifecycle()
     val historySaving by vm.historySaving.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var selected by rememberSaveable { mutableLongStateOf(0) }
@@ -59,6 +60,7 @@ import kotlinx.coroutines.launch
     val detail=library.books.firstOrNull { it.id==selected }
     LaunchedEffect(updates.available?.version) { if(updates.available!=null) { if(snackbar.showSnackbar("Sonder ${updates.available!!.version} is available",actionLabel="Update",withDismissAction=true)==SnackbarResult.ActionPerformed) updateOpen=true } }
     LaunchedEffect(notice) { if(notice.isNotEmpty()) { snackbar.showSnackbar(notice);vm.clearNotice() } }
+    LaunchedEffect(undo) { undo?.let { u -> try { if(snackbar.showSnackbar(u.message,actionLabel="Undo",withDismissAction=true,duration=SnackbarDuration.Long)==SnackbarResult.ActionPerformed) u.undo() } finally { vm.clearUndo(u) } } }
     LaunchedEffect(import.running,import.current,import.errors) { if(!import.running && import.current.isNotBlank()) { vm.notice(import.current+if(import.errors.isNotEmpty()) " · ${import.errors.size} files need attention" else "") } else if(!import.running && import.errors.isNotEmpty()) vm.notice(import.errors.first()) }
     BackHandler(player || settingsOpen || selected>0 || collectionFilter.isNotBlank()) { when { player -> player=false;settingsOpen -> settingsOpen=false;selected>0 -> selected=0;else -> collectionFilter="" } }
     SonderTheme(settings.theme) {
@@ -128,11 +130,12 @@ import kotlinx.coroutines.launch
     var query by rememberSaveable { mutableStateOf("") };var filter by rememberSaveable { mutableStateOf("All books") };var sort by rememberSaveable { mutableStateOf("Recently added") };var sortOpen by remember { mutableStateOf(false) }
     val filtered=books.filter { (collection.isEmpty() || if(collection=="Favorites") it.favorite else it.collection==collection) && (query.isBlank() || listOf(it.title,it.author,it.narrator,it.genre,it.collection).any { v -> v.contains(query,true) }) && when(filter) { "In progress" -> it.inProgress;"Unstarted" -> !it.inProgress && !it.finished;"Finished" -> it.finished;else -> true } }.let { list -> when(sort) { "Title" -> list.sortedBy { it.title.lowercase() };"Author" -> list.sortedBy { it.author.lowercase() };"Duration" -> list.sortedBy { it.duration };"Last listened" -> list.sortedByDescending { it.lastPlayed };else -> list.sortedByDescending { it.added } } }
     val recent=books.filter { it.inProgress }.maxByOrNull { it.lastPlayed }
+    val counts=books.filter { collection.isEmpty() || if(collection=="Favorites") it.favorite else it.collection==collection }.let { shelf -> mapOf("All books" to shelf.size,"In progress" to shelf.count { it.inProgress },"Unstarted" to shelf.count { !it.inProgress && !it.finished },"Finished" to shelf.count { it.finished }) }
     val header:@Composable (Modifier)->Unit = { modifier ->
         Column(modifier) {
             PageHeader(if(collection.isBlank()) "Your library" else collection,if(collection.isBlank()) "${books.size} ${if(books.size==1) "audiobook" else "audiobooks"}" else "Collection",action=if(collection.isNotEmpty()) { { IconAction(Icons.Rounded.Close,"Clear collection filter",onClearCollection) } } else { { PageAction(Icons.Rounded.Add,"Import audiobooks",onImport) } })
             Spacer(Modifier.height(16.dp));SearchField(query,{ query=it },"Search books, authors, narrators","Clear search")
-            Row(Modifier.bleed(24.dp).horizontalScroll(rememberScrollState()).padding(horizontal=24.dp).padding(top=12.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)) { listOf("All books","In progress","Unstarted","Finished").forEach { label -> ChoiceChip(label,filter==label,{ filter=label }) } }
+            Row(Modifier.bleed(24.dp).horizontalScroll(rememberScrollState()).padding(horizontal=24.dp).padding(top=12.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)) { listOf("All books","In progress","Unstarted","Finished").forEach { label -> ChoiceChip("$label · ${counts[label] ?: 0}",filter==label,{ filter=label }) } }
         }
     }
     Column(Modifier.fillMaxSize()) {

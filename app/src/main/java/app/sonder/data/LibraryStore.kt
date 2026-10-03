@@ -140,9 +140,19 @@ class LibraryStore(context: Context,databaseName:String="sonder-library.db") : S
             db.setTransactionSuccessful()
         } finally { db.endTransaction() }
     }
+    // Puts a book back exactly as it was before a status change, for Undo. Queued progress saves from before are invalidated.
+    suspend fun restoreStatus(book:Book) = change { db ->
+        db.beginTransaction()
+        try {
+            db.execSQL("UPDATE books SET progressRevision=progressRevision+1, finished=?, started=?, position=?, lastPlayed=? WHERE id=?",arrayOf<Any>(if(book.finished) 1 else 0,if(book.started) 1 else 0,book.position,book.lastPlayed,book.id))
+            if(!book.finished) db.delete("reading_prompts","bookId=?",arrayOf("${book.id}"))
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
     suspend fun startListening(id:Long) = change { db -> db.execSQL("UPDATE books SET started=1, finished=0 WHERE id=?",arrayOf(id));db.delete("reading_prompts","bookId=?",arrayOf("$id")) }
     suspend fun addBookmark(bookId: Long, position: Long, note: String) = change { db -> db.insertOrThrow("bookmarks",null,ContentValues().apply { put("bookId",bookId); put("position",position); put("note",note.take(10000)); put("created",System.currentTimeMillis()) }) }
     suspend fun editBookmark(id: Long, note: String) = change { db -> db.update("bookmarks",ContentValues().apply { put("note",note.take(10000)) },"id=?",arrayOf("$id")) }
+    suspend fun restoreBookmark(mark: Bookmark) = change { db -> db.insertWithOnConflict("bookmarks",null,ContentValues().apply { put("id",mark.id); put("bookId",mark.bookId); put("position",mark.position); put("note",mark.note.take(10000)); put("created",mark.created) },SQLiteDatabase.CONFLICT_IGNORE) }
     suspend fun removeBookmark(id: Long) = change { db -> db.delete("bookmarks","id=?",arrayOf("$id")) }
     suspend fun remove(id: Long) = change { db -> db.delete("books","id=?",arrayOf("$id")) }
     suspend fun rememberFolder(uri: String) = change { db -> db.insertWithOnConflict("folders",null,ContentValues().apply { put("uri",uri) },SQLiteDatabase.CONFLICT_IGNORE) }

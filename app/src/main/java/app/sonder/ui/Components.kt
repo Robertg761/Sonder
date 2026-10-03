@@ -26,7 +26,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -43,7 +43,7 @@ import kotlin.math.absoluteValue
     val bitmap by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null,book.cover) { value=withContext(Dispatchers.IO) { if(book.cover.isBlank()) null else runCatching { BitmapFactory.decodeFile(book.cover)?.asImageBitmap() }.getOrNull() } }
     val palette=listOf(Color(0xFF334F48) to Color(0xFFE1C298),Color(0xFF7E462D) to Color(0xFFF3D4A3),Color(0xFF394664) to Color(0xFFCFDBDD),Color(0xFF77545F) to Color(0xFFE9C7B4),Color(0xFF5A634A) to Color(0xFFE4DBB1))
     val (base,accent)=palette[(book.title.hashCode().toLong().absoluteValue%palette.size).toInt()]
-    Box(modifier.clip(RoundedCornerShape(if(large) 14.dp else 8.dp)).background(base).semantics { contentDescription="Cover of ${book.title}" }) {
+    Box(modifier.clip(RoundedCornerShape(if(large) 14.dp else 8.dp)).background(base).clearAndSetSemantics { contentDescription="Cover of ${book.title}" }) {
         if(bitmap!=null) Image(bitmap!!,null,Modifier.fillMaxSize(),contentScale=ContentScale.Crop)
         else {
             Canvas(Modifier.fillMaxSize()) {

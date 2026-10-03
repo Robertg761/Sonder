@@ -2,6 +2,9 @@ package app.sonder.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -88,7 +91,7 @@ import java.util.Locale
     val update=vm.preferences::update
     LazyColumn(contentPadding=PaddingValues(start=20.dp,end=20.dp,top=4.dp,bottom=32.dp),verticalArrangement=Arrangement.spacedBy(20.dp)) {
         item { SettingsGroup("Appearance") { Row(Modifier.padding(16.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)) { listOf("System","Light","Dark").forEach { t -> ChoiceChip(t,settings.theme==t,{ update(settings.copy(theme=t)) }) } } } }
-        item { SettingsGroup("Playback") { SettingSwitch("Skip silence","Skip quiet gaps in narration",settings.skipSilence,{ update(settings.copy(skipSilence=it)) });SettingSwitch("Preserve voice pitch","Keep narration natural at faster speeds",settings.preservePitch,{ update(settings.copy(preservePitch=it)) });SettingAction("Rewind button","${settings.rewind} seconds",Icons.Rounded.Replay,{ option="Rewind" });SettingAction("Forward button","${settings.forward} seconds",Icons.Rounded.Forward30,{ option="Forward" });SettingAction("Smart rewind","${settings.smartRewind} seconds when opening a book",Icons.Rounded.History,{ option="Smart rewind" }) } }
+        item { SettingsGroup("Playback") { SettingSwitch("Skip silence","Skip quiet gaps in narration",settings.skipSilence,{ update(settings.copy(skipSilence=it)) });SettingSwitch("Preserve voice pitch","Keep narration natural at faster speeds",settings.preservePitch,{ update(settings.copy(preservePitch=it)) });SettingAction("Rewind button","${settings.rewind} seconds",Icons.Rounded.Replay,{ option="Rewind" });SettingAction("Forward button","${settings.forward} seconds",Icons.Rounded.Forward30,{ option="Forward" });SettingAction("Smart rewind",if(settings.smartRewind==0) "Off" else "${settings.smartRewind} seconds when opening a book",Icons.Rounded.History,{ option="Smart rewind" }) } }
         item { SettingsGroup("Listening goal") { SettingAction("Daily goal","${settings.dailyGoal} minutes",Icons.Rounded.Flag,{ option="Daily goal" }) } }
         item { SettingsGroup("Library & files") {
             SettingAction("Add audio files","Import files from your phone or storage provider",Icons.Rounded.AudioFile,onFiles);SettingAction("Add a folder","Group audio tracks and read chapter files",Icons.Rounded.FolderOpen,onFolder);SettingAction("Scan device for audiobooks","Find shared audio without choosing a folder",Icons.Rounded.Search,onScan);if(library.folders.isNotEmpty()) SettingAction("Rescan saved folders","Add new files without importing duplicates",Icons.Rounded.Refresh,vm::rescan)
@@ -112,7 +115,10 @@ import java.util.Locale
     }
     if(option.isNotEmpty()) {
         val values=when(option) { "Daily goal" -> listOf(10,15,20,30,45,60,90,120);"Smart rewind" -> listOf(0,3,5,10,15,30);else -> listOf(5,10,15,20,30,45,60) }
-        AlertDialog(onDismissRequest={ option="" },title={ Text(option) },text={ Column { values.forEach { n -> TextButton({ update(when(option) { "Daily goal" -> settings.copy(dailyGoal=n);"Smart rewind" -> settings.copy(smartRewind=n);"Rewind" -> settings.copy(rewind=n);else -> settings.copy(forward=n) });option="" },modifier=Modifier.fillMaxWidth()) { Text("$n ${if(option=="Daily goal") "minutes" else "seconds"}") } } } },confirmButton={},dismissButton={ TextButton({ option="" }) { Text("Cancel") } })
+        val current=when(option) { "Daily goal" -> settings.dailyGoal;"Smart rewind" -> settings.smartRewind;"Rewind" -> settings.rewind;else -> settings.forward }
+        AlertDialog(onDismissRequest={ option="" },title={ Text(option) },text={ Column(Modifier.selectableGroup().verticalScroll(rememberScrollState())) { values.forEach { n ->
+            Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).selectable(selected=n==current,role=Role.RadioButton,onClick={ update(when(option) { "Daily goal" -> settings.copy(dailyGoal=n);"Smart rewind" -> settings.copy(smartRewind=n);"Rewind" -> settings.copy(rewind=n);else -> settings.copy(forward=n) });option="" }).padding(vertical=10.dp,horizontal=4.dp),verticalAlignment=Alignment.CenterVertically) { RadioButton(selected=n==current,onClick=null);Spacer(Modifier.width(14.dp));Text(if(n==0) "Off" else "$n ${if(option=="Daily goal") "minutes" else "seconds"}",style=MaterialTheme.typography.bodyLarge) }
+        } } },confirmButton={},dismissButton={ TextButton({ option="" }) { Text("Cancel") } })
     }
     if(restoreConfirm) AlertDialog(onDismissRequest={ restoreConfirm=false },title={ Text("Restore your library information?") },text={ Text("Matching library books receive the backup's metadata, listening progress, and bookmarks. Current bookmarks on those books are replaced. Reading history is merged by entry ID and restores without audio. Export a backup first to keep the current state.") },confirmButton={ TextButton({ restoreConfirm=false;onRestore() }) { Text("Choose backup") } },dismissButton={ TextButton({ restoreConfirm=false }) { Text("Cancel") } })
 }

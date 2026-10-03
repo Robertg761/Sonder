@@ -14,11 +14,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.sonder.data.Book
 import app.sonder.data.ReadingEntry
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import org.json.JSONObject
@@ -41,7 +45,7 @@ val ReadingDraftSaver=Saver<ReadingEntry?,String>(save={ it?.json()?.toString() 
                 StatCard(entries.count { it.percent<100 }.toString(),"Partial reads",Modifier.weight(1f))
             }
             Spacer(Modifier.height(16.dp));SearchField(query,{ query=it },"Search your reading history","Clear history search")
-            Row(Modifier.bleed(24.dp).horizontalScroll(rememberScrollState()).padding(horizontal=24.dp).padding(top=12.dp,bottom=4.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)) { listOf("All reads","Completed","Partial").forEach { value -> ChoiceChip(value,filter==value,{ filter=value }) } }
+            Row(Modifier.bleed(24.dp).horizontalScroll(rememberScrollState()).padding(horizontal=24.dp).padding(top=12.dp,bottom=4.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)) { listOf("All reads" to entries.size,"Completed" to entries.count { it.percent==100 },"Partial" to entries.count { it.percent<100 }).forEach { (value,count) -> ChoiceChip("$value · $count",filter==value,{ filter=value }) } }
         }
         if(filtered.isEmpty()) item { EmptyState(Icons.Rounded.HistoryEdu,if(entries.isEmpty()) "Keep a record of your reading" else "No matching entries",if(entries.isEmpty()) "Add a finished book or record how far you got. You can log books even without an audio file." else "Try another search or filter.",action={ OutlinedButton(onAdd) { Text("Log a book") } }) }
         items(filtered,key={ it.id }) { entry ->
@@ -76,24 +80,40 @@ val ReadingDraftSaver=Saver<ReadingEntry?,String>(save={ it?.json()?.toString() 
     var audioDuration by rememberSaveable(entry.id) { mutableLongStateOf(entry.duration) }
     var bookPicker by rememberSaveable { mutableStateOf(false) }
     var bookQuery by rememberSaveable { mutableStateOf("") }
+    var datePicker by rememberSaveable { mutableStateOf(false) }
     val validDate=runCatching { Regex("\\d{4}-\\d{2}-\\d{2}").matches(date) && !LocalDate.parse(date).isAfter(LocalDate.now()) }.getOrDefault(false)
     ModalBottomSheet(onDismissRequest={ if(!saving) onDismiss() },sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),containerColor=MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxHeight(.92f).fillMaxWidth().imePadding().padding(horizontal=24.dp)) {
             LazyColumn(Modifier.weight(1f).testTag("readingEditorForm"),verticalArrangement=Arrangement.spacedBy(14.dp),contentPadding=PaddingValues(bottom=16.dp)) {
                 item { Text("Log your reading",style=MaterialTheme.typography.headlineMedium);Text("Save the progress you want to remember. This entry won't change the library's listening status.",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.padding(top=8.dp)) }
-                if(books.isNotEmpty()) item { OutlinedButton({ bookPicker=true },enabled=!saving,modifier=Modifier.fillMaxWidth().testTag("readingPercent")) { Icon(Icons.Rounded.LibraryBooks,null);Spacer(Modifier.width(10.dp));Text("Choose a library book") } }
+                if(books.isNotEmpty()) item { OutlinedButton({ bookPicker=true },enabled=!saving,modifier=Modifier.fillMaxWidth().testTag("chooseLibraryBook")) { Icon(Icons.Rounded.LibraryBooks,null);Spacer(Modifier.width(10.dp));Text("Choose a library book") } }
                 item { OutlinedTextField(title,{ title=it.take(1000) },modifier=Modifier.fillMaxWidth(),label={ Text("Book title") },singleLine=true,enabled=!saving) }
                 item { OutlinedTextField(author,{ author=it.take(1000) },modifier=Modifier.fillMaxWidth(),label={ Text("Author") },singleLine=true,enabled=!saving) }
                 item {
-                    Text("${percent}% read",style=MaterialTheme.typography.headlineSmall)
-                    Slider(percent.toFloat(),{ percent=it.roundToInt() },valueRange=0f..100f,steps=99,enabled=!saving,modifier=Modifier.fillMaxWidth().testTag("readingPercent"))
+                    Row(verticalAlignment=Alignment.CenterVertically) {
+                        Text("${percent}% read",style=MaterialTheme.typography.headlineSmall,modifier=Modifier.weight(1f))
+                        FilledTonalIconButton({ percent=(percent-1).coerceAtLeast(0) },enabled=!saving && percent>0) { Icon(Icons.Rounded.Remove,"Decrease percentage") }
+                        FilledTonalIconButton({ percent=(percent+1).coerceAtMost(100) },enabled=!saving && percent<100) { Icon(Icons.Rounded.Add,"Increase percentage") }
+                    }
+                    Slider(percent.toFloat(),{ percent=it.roundToInt() },valueRange=0f..100f,enabled=!saving,modifier=Modifier.fillMaxWidth().testTag("readingPercent"))
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) { TextButton({ percent=0 },enabled=!saving) { Text("Not read") };TextButton({ percent=100 },modifier=Modifier.testTag("markReadingCompleted"),enabled=!saving) { Text("Completed") } }
                 }
-                item { OutlinedTextField(date,{ date=it.take(10) },modifier=Modifier.fillMaxWidth(),label={ Text(if(percent==100) "Finished on" else "Logged on") },placeholder={ Text("YYYY-MM-DD") },singleLine=true,isError=!validDate,enabled=!saving,supportingText={ Text(if(validDate) "Date format: YYYY-MM-DD" else "Choose a valid date, today or earlier") }) }
+                item { Box {
+                    OutlinedTextField(runCatching { LocalDate.parse(date).format(DateTimeFormatter.ofLocalizedDate(FormatStyle.LONG)) }.getOrDefault(date),{},readOnly=true,modifier=Modifier.fillMaxWidth(),label={ Text(if(percent==100) "Finished on" else "Logged on") },trailingIcon={ Icon(Icons.Rounded.CalendarMonth,null) },singleLine=true,isError=!validDate,enabled=!saving,supportingText=if(validDate) null else { { Text("Choose a valid date, today or earlier") } })
+                    // The field only displays the date; tapping anywhere on it opens the calendar.
+                    Box(Modifier.matchParentSize().clickable(enabled=!saving,onClickLabel="Choose date",role=Role.Button) { datePicker=true })
+                } }
                 item { OutlinedTextField(notes,{ notes=it.take(10000) },modifier=Modifier.fillMaxWidth(),label={ Text("Reading notes") },minLines=3,maxLines=6,enabled=!saving) }
             }
             Button(onClick={ onSave(entry.copy(title=title.trim(),author=author.trim(),percent=percent,loggedOn=date,notes=notes,source=source,duration=audioDuration)) },enabled=title.isNotBlank() && validDate && !saving,modifier=Modifier.fillMaxWidth().padding(vertical=12.dp).heightIn(min=52.dp)) { Text(if(saving) "Saving…" else "Save reading entry") }
         }
+    }
+    if(datePicker) {
+        // DatePicker works in UTC midnights; Sonder stores plain local dates.
+        val todayMillis=LocalDate.now().atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+        val state=rememberDatePickerState(initialSelectedDateMillis=runCatching { LocalDate.parse(date).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli() }.getOrDefault(todayMillis).coerceAtMost(todayMillis),
+            selectableDates=object:SelectableDates { override fun isSelectableDate(utcTimeMillis:Long)=utcTimeMillis<=todayMillis;override fun isSelectableYear(year:Int)=year<=LocalDate.now().year })
+        DatePickerDialog(onDismissRequest={ datePicker=false },confirmButton={ TextButton({ state.selectedDateMillis?.let { date=Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate().toString() };datePicker=false },enabled=state.selectedDateMillis!=null) { Text("OK") } },dismissButton={ TextButton({ datePicker=false }) { Text("Cancel") } }) { DatePicker(state) }
     }
     if(bookPicker) AlertDialog(onDismissRequest={ bookPicker=false },title={ Text("Choose a library book") },text={ Column {
         OutlinedTextField(bookQuery,{ bookQuery=it },label={ Text("Search library books") },singleLine=true)

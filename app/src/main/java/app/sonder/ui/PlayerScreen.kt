@@ -1,6 +1,13 @@
 package app.sonder.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.rememberLazyListState
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -41,12 +48,18 @@ import app.sonder.data.*
     val currentIndex=chapters.indexOfLast { it.start<=position }.coerceAtLeast(0)
     val current=chapters.getOrNull(currentIndex)
     val bookmarks=library.bookmarks.filter { it.bookId==book.id }
+    val listState=rememberLazyListState()
+    val scope=rememberCoroutineScope()
+    // Row 0 is the player header, so chapter i is list item i+1.
+    val currentVisible by remember(currentIndex) { derivedStateOf { listState.layoutInfo.visibleItemsInfo.any { it.index==currentIndex+1 } } }
+    val showJump=tab==0 && chapters.size>1 && listState.firstVisibleItemIndex>0 && !currentVisible
     Scaffold(containerColor=MaterialTheme.colorScheme.background,topBar={
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal=12.dp,vertical=10.dp),verticalAlignment=Alignment.CenterVertically) {
             IconAction(Icons.Rounded.KeyboardArrowDown,"Close player",onBack);Column(Modifier.weight(1f),horizontalAlignment=Alignment.CenterHorizontally) { Text("NOW LISTENING",style=MaterialTheme.typography.labelSmall,letterSpacing=2.sp,color=MaterialTheme.colorScheme.primary);Text(book.collection.ifBlank { "Your library" },style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant) };IconAction(Icons.Rounded.MoreHoriz,"Book details",onDetails)
         }
     }) { insets ->
-        LazyColumn(Modifier.fillMaxSize().padding(insets).widthIn(max=650.dp),contentPadding=PaddingValues(start=24.dp,end=24.dp,bottom=32.dp),horizontalAlignment=Alignment.CenterHorizontally) {
+        Box(Modifier.fillMaxSize().padding(insets)) {
+        LazyColumn(Modifier.fillMaxSize().widthIn(max=650.dp).align(Alignment.TopCenter),state=listState,contentPadding=PaddingValues(start=24.dp,end=24.dp,bottom=32.dp),horizontalAlignment=Alignment.CenterHorizontally) {
             item {
                 Spacer(Modifier.height(8.dp));Cover(book,Modifier.widthIn(max=280.dp).fillMaxWidth(.72f).aspectRatio(.74f).shadow(18.dp,RoundedCornerShape(14.dp),ambientColor=Color.Black.copy(alpha=.35f),spotColor=Color.Black.copy(alpha=.35f)).combinedClickable(onClick=onOptions,onLongClickLabel="Book options",onLongClick=onOptions),large=true)
                 Spacer(Modifier.height(28.dp));Text(book.title,style=MaterialTheme.typography.headlineMedium,textAlign=TextAlign.Center,modifier=Modifier.fillMaxWidth());Spacer(Modifier.height(4.dp));Text(book.author,color=MaterialTheme.colorScheme.onSurfaceVariant,style=MaterialTheme.typography.bodyLarge,textAlign=TextAlign.Center,modifier=Modifier.fillMaxWidth())
@@ -73,12 +86,21 @@ import app.sonder.data.*
             else if(bookmarks.isEmpty()) item { EmptyState(Icons.Rounded.BookmarkBorder,"Keep the good parts","Save a moment with a note so you can return to it later.") }
             else itemsIndexed(bookmarks,key={ _,b -> b.id }) { _,b -> Row(Modifier.fillMaxWidth().clickable { vm.seek(b.position) }.padding(vertical=12.dp),verticalAlignment=Alignment.CenterVertically) { Icon(Icons.Rounded.Bookmark,null,tint=MaterialTheme.colorScheme.primary);Spacer(Modifier.width(16.dp));Column(Modifier.weight(1f)) { Text(b.note,style=MaterialTheme.typography.bodyLarge);Text(clock(b.position),style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary) };IconAction(Icons.Rounded.DeleteOutline,"Delete bookmark",{ vm.deleteBookmark(b.id) },tint=MaterialTheme.colorScheme.onSurfaceVariant) } }
         }
+        AnimatedVisibility(showJump,Modifier.align(Alignment.BottomCenter).padding(bottom=20.dp),enter=fadeIn()+slideInVertically { it/2 },exit=fadeOut()+slideOutVertically { it/2 }) {
+            val above=listState.firstVisibleItemIndex>currentIndex+1
+            Surface(onClick={ scope.launch { listState.animateScrollToItem(currentIndex+1) } },shape=CircleShape,color=MaterialTheme.colorScheme.inverseSurface,contentColor=MaterialTheme.colorScheme.inverseOnSurface,shadowElevation=6.dp) {
+                Row(Modifier.padding(horizontal=16.dp,vertical=10.dp),verticalAlignment=Alignment.CenterVertically) { Icon(if(above) Icons.Rounded.ArrowUpward else Icons.Rounded.ArrowDownward,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Current chapter",style=MaterialTheme.typography.labelLarge) }
+            }
+        }
+        }
     }
-    if(bookmarkOpen) AlertDialog(onDismissRequest={ bookmarkOpen=false },title={ Text("Bookmark at ${clock(bookmarkPosition)}") },text={ OutlinedTextField(note,{ note=it },label={ Text("Add a note") },minLines=3,modifier=Modifier.fillMaxWidth()) },confirmButton={ TextButton({ vm.bookmark(note,bookmarkPosition,book.id);note="";bookmarkOpen=false;tab=1 }) { Text("Save bookmark") } },dismissButton={ TextButton({ bookmarkOpen=false }) { Text("Cancel") } })
+    // A bookmark saved without a note is named after its chapter rather than a generic "Bookmark".
+    val bookmarkChapter=chapters.lastOrNull { it.start<=bookmarkPosition }?.title.orEmpty()
+    if(bookmarkOpen) AlertDialog(onDismissRequest={ bookmarkOpen=false },title={ Text("Bookmark at ${clock(bookmarkPosition)}") },text={ OutlinedTextField(note,{ note=it },label={ Text("Add a note") },placeholder={ if(bookmarkChapter.isNotBlank()) Text(bookmarkChapter) },supportingText={ if(note.isBlank() && bookmarkChapter.isNotBlank()) Text("Leave blank to name it after the chapter") },minLines=3,modifier=Modifier.fillMaxWidth()) },confirmButton={ TextButton({ vm.bookmark(note.ifBlank { bookmarkChapter },bookmarkPosition,book.id);note="";bookmarkOpen=false;tab=1 }) { Text("Save bookmark") } },dismissButton={ TextButton({ bookmarkOpen=false }) { Text("Cancel") } })
     if(speedOpen) ModalBottomSheet(onDismissRequest={ speedOpen=false },containerColor=MaterialTheme.colorScheme.background) {
         Column(Modifier.padding(horizontal=24.dp).padding(bottom=32.dp)) {
             Text("At your own pace",style=MaterialTheme.typography.headlineMedium);Spacer(Modifier.height(8.dp));Text("${playback.speed}× · ${duration(((book.duration-playback.position)/playback.speed).toLong())} remaining",color=MaterialTheme.colorScheme.onSurfaceVariant)
-            Slider(playback.speed,{ vm.speed((it*20).toInt()/20f) },valueRange=.5f..3f,steps=49)
+            Slider(playback.speed,{ vm.speed((it*20).toInt()/20f) },valueRange=.5f..3f)
             FlowRow(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) { listOf(.75f,1f,1.25f,1.5f,2f).forEach { value -> ChoiceChip("${value}×",playback.speed==value,{ vm.speed(value) }) } }
             Row(Modifier.fillMaxWidth().padding(top=16.dp),verticalAlignment=Alignment.CenterVertically) { Text("Preserve voice pitch",modifier=Modifier.weight(1f));Switch(settings.preservePitch,{ vm.preferences.update(settings.copy(preservePitch=it)) }) }
         }
