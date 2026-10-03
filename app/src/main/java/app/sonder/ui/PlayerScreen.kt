@@ -1,6 +1,13 @@
 package app.sonder.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.rememberLazyListState
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -14,6 +21,10 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -37,55 +48,70 @@ import app.sonder.data.*
     val currentIndex=chapters.indexOfLast { it.start<=position }.coerceAtLeast(0)
     val current=chapters.getOrNull(currentIndex)
     val bookmarks=library.bookmarks.filter { it.bookId==book.id }
+    val listState=rememberLazyListState()
+    val scope=rememberCoroutineScope()
+    // Row 0 is the player header, so chapter i is list item i+1.
+    val currentVisible by remember(currentIndex) { derivedStateOf { listState.layoutInfo.visibleItemsInfo.any { it.index==currentIndex+1 } } }
+    val showJump=tab==0 && chapters.size>1 && listState.firstVisibleItemIndex>0 && !currentVisible
     Scaffold(containerColor=MaterialTheme.colorScheme.background,topBar={
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal=12.dp,vertical=10.dp),verticalAlignment=Alignment.CenterVertically) {
-            IconAction(Icons.Rounded.KeyboardArrowDown,"Close player",onBack);Column(Modifier.weight(1f),horizontalAlignment=Alignment.CenterHorizontally) { Text("NOW LISTENING",style=MaterialTheme.typography.labelSmall,letterSpacing=2.sp);Text(book.collection.ifBlank { "Your library" },style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant) };IconAction(Icons.Rounded.MoreHoriz,"Book details",onDetails)
+            IconAction(Icons.Rounded.KeyboardArrowDown,"Close player",onBack);Column(Modifier.weight(1f),horizontalAlignment=Alignment.CenterHorizontally) { Text("NOW LISTENING",style=MaterialTheme.typography.labelSmall,letterSpacing=2.sp,color=MaterialTheme.colorScheme.primary);Text(book.collection.ifBlank { "Your library" },style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant) };IconAction(Icons.Rounded.MoreHoriz,"Book details",onDetails)
         }
     }) { insets ->
-        LazyColumn(Modifier.fillMaxSize().padding(insets).widthIn(max=650.dp),contentPadding=PaddingValues(start=24.dp,end=24.dp,bottom=32.dp),horizontalAlignment=Alignment.CenterHorizontally) {
+        Box(Modifier.fillMaxSize().padding(insets)) {
+        LazyColumn(Modifier.fillMaxSize().widthIn(max=650.dp).align(Alignment.TopCenter),state=listState,contentPadding=PaddingValues(start=24.dp,end=24.dp,bottom=32.dp),horizontalAlignment=Alignment.CenterHorizontally) {
             item {
-                Cover(book,Modifier.widthIn(max=290.dp).fillMaxWidth(.76f).aspectRatio(.78f).combinedClickable(onClick=onOptions,onLongClickLabel="Book options",onLongClick=onOptions),large=true)
-                Spacer(Modifier.height(24.dp));Text(book.title,style=MaterialTheme.typography.headlineMedium,textAlign=TextAlign.Center,modifier=Modifier.fillMaxWidth());Spacer(Modifier.height(7.dp));Text(book.author,color=MaterialTheme.colorScheme.onSurfaceVariant,style=MaterialTheme.typography.bodyLarge,textAlign=TextAlign.Center,modifier=Modifier.fillMaxWidth())
+                Spacer(Modifier.height(8.dp));Cover(book,Modifier.widthIn(max=280.dp).fillMaxWidth(.72f).aspectRatio(.74f).shadow(18.dp,RoundedCornerShape(14.dp),ambientColor=Color.Black.copy(alpha=.35f),spotColor=Color.Black.copy(alpha=.35f)).combinedClickable(onClick=onOptions,onLongClickLabel="Book options",onLongClick=onOptions),large=true)
+                Spacer(Modifier.height(28.dp));Text(book.title,style=MaterialTheme.typography.headlineMedium,textAlign=TextAlign.Center,modifier=Modifier.fillMaxWidth());Spacer(Modifier.height(4.dp));Text(book.author,color=MaterialTheme.colorScheme.onSurfaceVariant,style=MaterialTheme.typography.bodyLarge,textAlign=TextAlign.Center,modifier=Modifier.fillMaxWidth())
                 if(book.narrator.isNotBlank()) Text("Narrated by ${book.narrator}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant,textAlign=TextAlign.Center,modifier=Modifier.fillMaxWidth().padding(top=4.dp))
-                Spacer(Modifier.height(22.dp));Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) { Text(current?.title ?: "Audiobook",style=MaterialTheme.typography.titleSmall,modifier=Modifier.weight(1f),maxLines=1,overflow=TextOverflow.Ellipsis);Text("${currentIndex+1} / ${chapters.size}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant) }
-                Slider(value=position.toFloat().coerceIn(0f,book.duration.toFloat().coerceAtLeast(1f)),onValueChange={ drag=it },onValueChangeFinished={ drag?.let { vm.seek(it.toLong()) };drag=null },valueRange=0f..book.duration.toFloat().coerceAtLeast(1f),modifier=Modifier.fillMaxWidth())
-                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) { Text(clock(position),style=MaterialTheme.typography.bodySmall);Text("−${clock(book.duration-position)}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant) }
+                Spacer(Modifier.height(24.dp));Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) { Text(current?.title ?: "Audiobook",style=MaterialTheme.typography.titleSmall,modifier=Modifier.weight(1f),maxLines=1,overflow=TextOverflow.Ellipsis);Text("Chapter ${currentIndex+1} of ${chapters.size.coerceAtLeast(1)}",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant) }
+                Slider(value=position.toFloat().coerceIn(0f,book.duration.toFloat().coerceAtLeast(1f)),onValueChange={ drag=it },onValueChangeFinished={ drag?.let { vm.seek(it.toLong()) };drag=null },valueRange=0f..book.duration.toFloat().coerceAtLeast(1f),modifier=Modifier.fillMaxWidth(),colors=SliderDefaults.colors(inactiveTrackColor=MaterialTheme.colorScheme.onSurface.copy(alpha=.1f)))
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) { Text(clock(position),style=MaterialTheme.typography.labelMedium);Text("−${clock(book.duration-position)}",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant) }
                 Spacer(Modifier.height(18.dp));Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceEvenly,verticalAlignment=Alignment.CenterVertically) {
                     IconAction(Icons.Rounded.SkipPrevious,"Previous chapter",{ vm.seek(chapters.getOrNull(if(position-(current?.start ?: 0)>3000) currentIndex else currentIndex-1)?.start ?: 0) })
-                    Column(horizontalAlignment=Alignment.CenterHorizontally) { IconAction(Icons.Rounded.Replay,"Rewind ${settings.rewind} seconds",{ vm.skip(-settings.rewind) });Text("${settings.rewind}s",style=MaterialTheme.typography.labelSmall) }
-                    FilledIconButton(vm::toggle,modifier=Modifier.size(76.dp),shape=CircleShape) { if(playback.buffering) CircularProgressIndicator(Modifier.size(26.dp),color=MaterialTheme.colorScheme.onPrimary,strokeWidth=2.dp) else Icon(if(playback.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,if(playback.playing) "Pause" else "Play",Modifier.size(36.dp)) }
-                    Column(horizontalAlignment=Alignment.CenterHorizontally) { IconAction(Icons.Rounded.FastForward,"Forward ${settings.forward} seconds",{ vm.skip(settings.forward) });Text("${settings.forward}s",style=MaterialTheme.typography.labelSmall) }
+                    Column(horizontalAlignment=Alignment.CenterHorizontally) { IconAction(Icons.Rounded.Replay,"Rewind ${settings.rewind} seconds",{ vm.skip(-settings.rewind) });Text("${settings.rewind}s",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant) }
+                    FilledIconButton(vm::toggle,modifier=Modifier.size(72.dp),shape=CircleShape) { if(playback.buffering) CircularProgressIndicator(Modifier.size(26.dp),color=MaterialTheme.colorScheme.onPrimary,strokeWidth=2.dp) else Icon(if(playback.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,if(playback.playing) "Pause" else "Play",Modifier.size(36.dp)) }
+                    Column(horizontalAlignment=Alignment.CenterHorizontally) { IconAction(Icons.Rounded.Replay,"Forward ${settings.forward} seconds",{ vm.skip(settings.forward) },Modifier.graphicsLayer(scaleX=-1f));Text("${settings.forward}s",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant) }
                     IconAction(Icons.Rounded.SkipNext,"Next chapter",{ chapters.getOrNull(currentIndex+1)?.let { vm.seek(it.start) } })
                 }
-                Spacer(Modifier.height(24.dp));Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceEvenly) {
-                    PlayerTool(Icons.Rounded.Speed,"${playback.speed}×","Playback speed",{ speedOpen=true })
-                    PlayerTool(Icons.Rounded.Bedtime,if(timer<0) "Chapter end" else if(timer>0) clock(timer) else "Sleep timer","Sleep timer",{ timerOpen=true })
-                    PlayerTool(Icons.Rounded.BookmarkAdd,"Bookmark","Add bookmark",{ bookmarkPosition=playback.position;bookmarkOpen=true })
+                Spacer(Modifier.height(24.dp));Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                    ActionTile(Icons.Rounded.Speed,"${playback.speed}×",{ speedOpen=true },Modifier.weight(1f),"Playback speed",active=playback.speed!=1f)
+                    ActionTile(Icons.Rounded.Bedtime,if(timer<0) "Chapter end" else if(timer>0) clock(timer) else "Sleep timer",{ timerOpen=true },Modifier.weight(1f),"Sleep timer",active=timer!=0L)
+                    ActionTile(Icons.Rounded.BookmarkAdd,"Bookmark",{ bookmarkPosition=playback.position;bookmarkOpen=true },Modifier.weight(1f),"Add bookmark")
                 }
                 if(playback.error.isNotBlank()) Text(playback.error,color=MaterialTheme.colorScheme.error,modifier=Modifier.padding(top=16.dp),style=MaterialTheme.typography.bodyMedium)
-                Spacer(Modifier.height(24.dp));PrimaryTabRow(selectedTabIndex=tab,containerColor=MaterialTheme.colorScheme.background) { listOf("Chapters","Bookmarks").forEachIndexed { i,title -> Tab(selected=tab==i,onClick={ tab=i },text={ Text(title) }) } };Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(20.dp));PrimaryTabRow(selectedTabIndex=tab,containerColor=MaterialTheme.colorScheme.background,divider={ HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant) }) { listOf("Chapters","Bookmarks").forEachIndexed { i,title -> Tab(selected=tab==i,onClick={ tab=i },text={ Text(title) },unselectedContentColor=MaterialTheme.colorScheme.onSurfaceVariant) } };Spacer(Modifier.height(12.dp))
             }
             if(tab==0) itemsIndexed(chapters,key={ _,c -> c.start }) { i,c -> ChapterRow(i,c,i==currentIndex,{ vm.seek(c.start) }) }
             else if(bookmarks.isEmpty()) item { EmptyState(Icons.Rounded.BookmarkBorder,"Keep the good parts","Save a moment with a note so you can return to it later.") }
-            else itemsIndexed(bookmarks,key={ _,b -> b.id }) { _,b -> Row(Modifier.fillMaxWidth().clickable { vm.seek(b.position) }.padding(vertical=12.dp),verticalAlignment=Alignment.CenterVertically) { Icon(Icons.Rounded.Bookmark,null,tint=MaterialTheme.colorScheme.primary);Spacer(Modifier.width(16.dp));Column(Modifier.weight(1f)) { Text(b.note,style=MaterialTheme.typography.bodyLarge);Text(clock(b.position),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.primary) };IconAction(Icons.Rounded.DeleteOutline,"Delete bookmark",{ vm.deleteBookmark(b.id) }) } }
+            else itemsIndexed(bookmarks,key={ _,b -> b.id }) { _,b -> Row(Modifier.fillMaxWidth().clickable { vm.seek(b.position) }.padding(vertical=12.dp),verticalAlignment=Alignment.CenterVertically) { Icon(Icons.Rounded.Bookmark,null,tint=MaterialTheme.colorScheme.primary);Spacer(Modifier.width(16.dp));Column(Modifier.weight(1f)) { Text(b.note,style=MaterialTheme.typography.bodyLarge);Text(clock(b.position),style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary) };IconAction(Icons.Rounded.DeleteOutline,"Delete bookmark",{ vm.deleteBookmark(b.id) },tint=MaterialTheme.colorScheme.onSurfaceVariant) } }
+        }
+        AnimatedVisibility(showJump,Modifier.align(Alignment.BottomCenter).padding(bottom=20.dp),enter=fadeIn()+slideInVertically { it/2 },exit=fadeOut()+slideOutVertically { it/2 }) {
+            val above=listState.firstVisibleItemIndex>currentIndex+1
+            Surface(onClick={ scope.launch { listState.animateScrollToItem(currentIndex+1) } },shape=CircleShape,color=MaterialTheme.colorScheme.inverseSurface,contentColor=MaterialTheme.colorScheme.inverseOnSurface,shadowElevation=6.dp) {
+                Row(Modifier.padding(horizontal=16.dp,vertical=10.dp),verticalAlignment=Alignment.CenterVertically) { Icon(if(above) Icons.Rounded.ArrowUpward else Icons.Rounded.ArrowDownward,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Current chapter",style=MaterialTheme.typography.labelLarge) }
+            }
+        }
         }
     }
-    if(bookmarkOpen) AlertDialog(onDismissRequest={ bookmarkOpen=false },title={ Text("Bookmark at ${clock(bookmarkPosition)}") },text={ OutlinedTextField(note,{ note=it },label={ Text("Add a note") },minLines=3,modifier=Modifier.fillMaxWidth()) },confirmButton={ TextButton({ vm.bookmark(note,bookmarkPosition,book.id);note="";bookmarkOpen=false;tab=1 }) { Text("Save bookmark") } },dismissButton={ TextButton({ bookmarkOpen=false }) { Text("Cancel") } })
+    // A bookmark saved without a note is named after its chapter rather than a generic "Bookmark".
+    val bookmarkChapter=chapters.lastOrNull { it.start<=bookmarkPosition }?.title.orEmpty()
+    if(bookmarkOpen) AlertDialog(onDismissRequest={ bookmarkOpen=false },title={ Text("Bookmark at ${clock(bookmarkPosition)}") },text={ OutlinedTextField(note,{ note=it },label={ Text("Add a note") },placeholder={ if(bookmarkChapter.isNotBlank()) Text(bookmarkChapter) },supportingText={ if(note.isBlank() && bookmarkChapter.isNotBlank()) Text("Leave blank to name it after the chapter") },minLines=3,modifier=Modifier.fillMaxWidth()) },confirmButton={ TextButton({ vm.bookmark(note.ifBlank { bookmarkChapter },bookmarkPosition,book.id);note="";bookmarkOpen=false;tab=1 }) { Text("Save bookmark") } },dismissButton={ TextButton({ bookmarkOpen=false }) { Text("Cancel") } })
     if(speedOpen) ModalBottomSheet(onDismissRequest={ speedOpen=false },containerColor=MaterialTheme.colorScheme.background) {
         Column(Modifier.padding(horizontal=24.dp).padding(bottom=32.dp)) {
             Text("At your own pace",style=MaterialTheme.typography.headlineMedium);Spacer(Modifier.height(8.dp));Text("${playback.speed}× · ${duration(((book.duration-playback.position)/playback.speed).toLong())} remaining",color=MaterialTheme.colorScheme.onSurfaceVariant)
-            Slider(playback.speed,{ vm.speed((it*20).toInt()/20f) },valueRange=.5f..3f,steps=49)
-            FlowRow(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) { listOf(.75f,1f,1.25f,1.5f,2f).forEach { value -> FilterChip(selected=playback.speed==value,onClick={ vm.speed(value) },label={ Text("${value}×") }) } }
+            Slider(playback.speed,{ vm.speed((it*20).toInt()/20f) },valueRange=.5f..3f)
+            FlowRow(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) { listOf(.75f,1f,1.25f,1.5f,2f).forEach { value -> ChoiceChip("${value}×",playback.speed==value,{ vm.speed(value) }) } }
             Row(Modifier.fillMaxWidth().padding(top=16.dp),verticalAlignment=Alignment.CenterVertically) { Text("Preserve voice pitch",modifier=Modifier.weight(1f));Switch(settings.preservePitch,{ vm.preferences.update(settings.copy(preservePitch=it)) }) }
         }
     }
     if(timerOpen) ModalBottomSheet(onDismissRequest={ timerOpen=false },containerColor=MaterialTheme.colorScheme.background) {
         Column(Modifier.padding(horizontal=24.dp).padding(bottom=32.dp)) {
             Text("Drift off to a story",style=MaterialTheme.typography.headlineMedium);Text("Playback pauses when the timer ends.",color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.padding(top=8.dp,bottom=20.dp))
-            listOf(15,30,45,60,90).forEach { minutes -> TextButton(onClick={ vm.timer(minutes);timerOpen=false },modifier=Modifier.fillMaxWidth()) { Text("$minutes minutes",modifier=Modifier.weight(1f),textAlign=TextAlign.Start);Icon(Icons.Rounded.ChevronRight,null) } }
-            TextButton({ vm.timer(-1);timerOpen=false },Modifier.fillMaxWidth()) { Text("End of this chapter",modifier=Modifier.weight(1f),textAlign=TextAlign.Start);Icon(Icons.Rounded.Check,null) }
+            listOf(15,30,45,60,90).forEach { minutes -> TimerOption("$minutes minutes",{ vm.timer(minutes);timerOpen=false }) }
+            TimerOption("End of this chapter",{ vm.timer(-1);timerOpen=false },selected=timer<0)
             if(timer!=0L) TextButton({ vm.timer(0);timerOpen=false },Modifier.fillMaxWidth()) { Text("Turn off timer",color=MaterialTheme.colorScheme.error) }
         }
     }
 }
-@Composable private fun PlayerTool(icon:androidx.compose.ui.graphics.vector.ImageVector,label:String,description:String,onClick:()->Unit) { Column(Modifier.widthIn(min=80.dp).clickable(onClick=onClick).padding(8.dp),horizontalAlignment=Alignment.CenterHorizontally) { Icon(icon,description,tint=MaterialTheme.colorScheme.primary);Spacer(Modifier.height(7.dp));Text(label,style=MaterialTheme.typography.bodySmall) } }
+@Composable private fun TimerOption(label:String,onClick:()->Unit,selected:Boolean=false) { Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable(onClick=onClick).padding(horizontal=4.dp,vertical=14.dp),verticalAlignment=Alignment.CenterVertically) { Text(label,style=MaterialTheme.typography.bodyLarge,modifier=Modifier.weight(1f));if(selected) Icon(Icons.Rounded.Check,"Selected",tint=MaterialTheme.colorScheme.primary) } }

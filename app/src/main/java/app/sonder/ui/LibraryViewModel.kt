@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
 
 data class DeviceScanState(val running:Boolean=false,val completed:Boolean=false,val result:DeviceScanner.Result=DeviceScanner.Result(emptyList()),val error:String="")
+data class UndoNotice(val message:String,val undo:()->Unit)
 data class Playback(val bookId:Long=0,val position:Long=0,val playing:Boolean=false,val buffering:Boolean=false,val speed:Float=1f,val error:String="")
 @UnstableApi
 class LibraryViewModel(application:Application):AndroidViewModel(application) {
@@ -163,23 +164,30 @@ class LibraryViewModel(application:Application):AndroidViewModel(application) {
             finally { historySavingState.value=false }
         }
     }
-    fun deleteReading(id:String) { perform { store.deleteReading(id);notice("Removed this reading history entry.") } }
+    fun deleteReading(id:String) {
+        val entry=library.value.readingHistory.firstOrNull { it.id==id }
+        perform { store.deleteReading(id);if(entry!=null) offerUndo("Reading entry deleted") { perform { store.saveReading(entry) } } else notice("Removed this reading history entry.") }
+    }
     fun dismissCompletion(id:String) { perform { store.dismissCompletion(id) } }
     private fun perform(block:suspend ()->Unit) { viewModelScope.launch(errorHandler) { try { block() } catch(e:CancellationException) { throw e } catch(e:Exception) { notice("Could not save the library. Check available storage and try again.") } } }
     fun edit(book:Book) { perform { store.update(book) } }
     fun markStatus(book:Book,status:ListeningStatus) {
         playingJob?.cancel()
+        val before=library.value.books.firstOrNull { it.id==book.id } ?: book
         perform {
             store.markStatus(book.id,status)
             if(playback.value.bookId==book.id) {
                 controller?.pause();controller?.stop();controller?.clearMediaItems();loadedTracks=emptyList();updatePlayback();timer(0)
             }
-            notice("Marked as ${status.label.lowercase()}.")
+            offerUndo("Marked as ${status.label.lowercase()}") { perform { store.restoreStatus(before) } }
         }
     }
     fun remove(book:Book) { perform { if(playback.value.bookId==book.id) { controller?.stop();controller?.clearMediaItems() };store.remove(book.id);if(book.cover.isNotEmpty()) withContext(Dispatchers.IO) { File(book.cover).delete() };notice("Removed from library. The original audio files are unchanged.") } }
     fun bookmark(note:String,position:Long?=null,bookId:Long?=null) { val p=playback.value;val id=bookId ?: p.bookId; if(id>0) perform { store.addBookmark(id,position ?: p.position,note.ifBlank { "Bookmark" });notice("Bookmark saved.") } }
-    fun deleteBookmark(id:Long) { perform { store.removeBookmark(id) } }
+    fun deleteBookmark(id:Long) {
+        val mark=library.value.bookmarks.firstOrNull { it.id==id }
+        perform { store.removeBookmark(id);if(mark!=null) offerUndo("Bookmark deleted") { perform { store.restoreBookmark(mark) } } }
+    }
     fun editBookmark(id:Long,note:String) { perform { store.editBookmark(id,note) } }
     fun export(uri:Uri) { viewModelScope.launch(errorHandler) {
         runCatching { val json=store.export();withContext(Dispatchers.IO) { app.contentResolver.openOutputStream(uri,"wt")?.use { it.write(json.toByteArray()) } ?: error("Cannot write backup") } }.onSuccess { notice("Backup saved. Audio files are not included.") }.onFailure { notice(it.message ?: "Backup could not be saved.") }
@@ -188,6 +196,10 @@ class LibraryViewModel(application:Application):AndroidViewModel(application) {
         runCatching { val text=withContext(Dispatchers.IO) { app.contentResolver.openInputStream(uri)?.use { val bytes=it.readBounded(8_000_001);require(bytes.size<=8_000_000);bytes.toString(Charsets.UTF_8) } ?: error("Cannot open backup") };store.restore(text) }.onSuccess { controller?.pause();controller?.stop();controller?.clearMediaItems();loadedTracks=emptyList();updatePlayback();notice("Restored $it library books. ${library.value.readingHistory.size} reading history entries available.") }.onFailure { notice("Could not restore this backup. Check the file and version.") }
     } }
     fun notice(text:String) { noticeState.value=text }
+    private val undoState=MutableStateFlow<UndoNotice?>(null)
+    val undo=undoState.asStateFlow()
+    private fun offerUndo(message:String,undo:()->Unit) { undoState.value=UndoNotice(message,undo) }
+    fun clearUndo(notice:UndoNotice) { undoState.compareAndSet(notice,null) }
     fun clearNotice() { noticeState.value="" }
     override fun onCleared() { MediaController.releaseFuture(controllerFuture);super.onCleared() }
 }

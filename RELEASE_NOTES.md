@@ -1,8 +1,14 @@
-Sonder now receives updates directly from its GitHub releases.
+Sonder 1.4 is a cleaner, calmer redesign with fewer rough edges.
 
-- Automatic checks when the app opens, with a daily limit and an opt-out in Settings.
-- Manual update checks, release notes, download progress, retry, and Android installation prompts.
-- Downloads resume after closing the app. APK checksums, package identity, version, and signing certificate are verified before installation.
-- Your audiobook library, playback progress, bookmarks, and independent Reading History stay saved through updates.
+- A refreshed look across every screen, in light and dark: consistent colors, cards, and type, with no more stray purple in dialogs and menus.
+- Each tab opens on its own title. Import lives on the Library title row, and Settings is on every tab.
+- Undo after deleting a bookmark or reading entry, and after changing a book's status, including "Not started".
+- Settings pickers show the value you have chosen.
+- Pick reading-history dates from a calendar, and fine-tune the percentage with − and + buttons.
+- Bookmarks saved without a note are named after their chapter.
+- A "Current chapter" button in the player jumps back to where you are in long chapter lists.
+- Filter chips show how many books or entries each one holds.
+- Small covers show a monogram instead of clipped text, and long titles no longer break mid-word.
+- Screen readers announce each cover once.
 
-Install this APK over an existing Sonder installation. Version 1.2 and earlier need this one manual update to enable future in-app updates.
+Install over your existing Sonder app to keep your library. Version 1.2 and earlier need this one manual update to enable in-app updates.
