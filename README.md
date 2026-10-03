@@ -6,6 +6,12 @@ A native audiobook library and player with offline listening, built with Kotlin,
 
 Install over your existing Sonder app to keep its library.
 
+<p>
+<img src="docs/screenshots/library.png" alt="Sonder audiobook library" width="250">
+<img src="docs/screenshots/reading-history.png" alt="Sonder reading history with a partial reading record" width="250">
+<img src="docs/screenshots/update.png" alt="Sonder verified in-app update ready to install" width="250">
+</p>
+
 ## Install and listen
 
 Open the supplied `Sonder-1.3.0.apk` on your Android phone. To update version 1.0, 1.1, or 1.2, install this APK over the existing app without uninstalling it. The same signing key and an in-place database migration preserve your library, progress, bookmarks, and granted folder access. Android may ask you to allow installation from the app that opened the file. Open Sonder, tap **+**, and choose files or a folder through the system picker.
@@ -18,7 +24,7 @@ The initial library is empty. Test tones and test books are confined to the test
 
 The public repository is [Robertg761/Sonder](https://github.com/Robertg761/Sonder). Install the latest APK from [Releases](https://github.com/Robertg761/Sonder/releases/latest). Versions 1.2 and earlier need one manual update to enable the updater.
 
-Sonder checks the latest stable GitHub release when it opens, at most once a day. Settings includes an automatic-check toggle and a manual check. An update notice opens release notes and a download button. Downloads use Android DownloadManager and can finish with the app closed. Return to the app to install. Downloads are checked against the GitHub SHA-256 digest and the installed app's package, version, and signing certificate. Nothing is installed silently. Android asks for install permission and confirmation. If you allow installs from Sonder in Android settings, return and tap Install update again. Cancel or retry a failed download from the update sheet.
+Sonder checks the latest stable GitHub release when it opens, at most once a day. Settings includes an automatic-check toggle and a manual check. An update notice opens release notes and a download button. Downloads use Android DownloadManager and can finish with the app closed. Return to the app to install. Downloads are checked against the GitHub SHA-256 digest and the installed app's package, version, and signing certificate. Nothing is installed silently. Android asks for install permission and confirmation. If you allow installs from Sonder in Android settings, return and tap Install update again. Cancel or retry a failed download from the update sheet. If an abrupt shutdown happens just as a download starts, check again and retry if it does not appear.
 
 The `.github/workflows/android.yml` workflow builds, tests, and lints pull requests. A push to main with a new versionName and versionCode builds and signs a release, then publishes the APK, AAB, and checksums. Existing release versions are skipped. Update `RELEASE_NOTES.md` for each release. A matching version tag or manual workflow dispatch also runs the release workflow. The two signing secrets are `SONDER_KEYSTORE_B64` and `SONDER_KEYSTORE_PASSWORD`; the private key is decoded in a temporary directory and never committed. Keep the same key for every update.
 
@@ -92,7 +98,7 @@ The release tasks produce an optimized unsigned APK and AAB. The supplied APK an
 
 A dedicated release signing key was generated locally for the supplied installable APK. The separate `Signing` deliverable contains the private keystore and its password file. Store both privately and back them up. Future APK updates must use the same signing key and a higher `versionCode`. Never publish the signing directory or add it to version control. The source ZIP contains no signing secrets.
 
-For Google Play distribution, create the store entry, prepare screenshots and the privacy/data safety declarations, enroll the appropriate signing key, and build a signed AAB using `:app:bundleRelease`. The app has not been submitted to a store.
+The supplied release uses GitHub updates and is intended for sideloading. Google Play distribution needs a separately qualified store build with the store's update mechanism, screenshots, privacy/data safety declarations, and signing enrollment. The app has not been submitted to a store.
 
 ## Source layout
 
