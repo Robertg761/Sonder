@@ -1,12 +1,10 @@
 package app.sonder.ui
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -34,39 +32,38 @@ val ReadingDraftSaver=Saver<ReadingEntry?,String>(save={ it?.json()?.toString() 
     var filter by rememberSaveable { mutableStateOf("All reads") }
     var deleting by rememberSaveable { mutableStateOf("") }
     val filtered=entries.filter { (query.isBlank() || listOf(it.title,it.author,it.notes).any { value -> value.contains(query,true) }) && when(filter) { "Completed" -> it.percent==100;"Partial" -> it.percent<100;else -> true } }
-    LazyColumn(contentPadding=PaddingValues(24.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
+    LazyColumn(contentPadding=PaddingValues(start=24.dp,end=24.dp,top=12.dp,bottom=24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
         item {
-            Row(verticalAlignment=Alignment.CenterVertically) { Text("Reading history",style=MaterialTheme.typography.headlineLarge,modifier=Modifier.weight(1f));IconAction(Icons.Rounded.Add,"Add reading history",onAdd) }
-            Text("Log completed books and partial reads. Entries stay saved when you reset or remove library books.",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.padding(top=8.dp))
-            Spacer(Modifier.height(20.dp))
+            PageHeader("Reading history","Log finished books and partial reads. Entries stay saved when you reset or remove library books.") { PageAction(Icons.Rounded.EditNote,"Add reading history",onAdd) }
+            Spacer(Modifier.height(16.dp))
             Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-                HistoryCount(entries.count { it.percent==100 }.toString(),"Completed reads",Modifier.weight(1f))
-                HistoryCount(entries.count { it.percent<100 }.toString(),"Partial reads",Modifier.weight(1f))
+                StatCard(entries.count { it.percent==100 }.toString(),"Completed reads",Modifier.weight(1f),highlight=true)
+                StatCard(entries.count { it.percent<100 }.toString(),"Partial reads",Modifier.weight(1f))
             }
-            Spacer(Modifier.height(18.dp));OutlinedTextField(query,{ query=it },modifier=Modifier.fillMaxWidth(),singleLine=true,shape=RoundedCornerShape(16.dp),placeholder={ Text("Search your reading history") },leadingIcon={ Icon(Icons.Rounded.Search,null) },trailingIcon={ if(query.isNotBlank()) IconAction(Icons.Rounded.Close,"Clear history search",{ query="" }) })
-            Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(8.dp)) { listOf("All reads","Completed","Partial").forEach { value -> FilterChip(filter==value,{ filter=value },label={ Text(value) }) } }
+            Spacer(Modifier.height(16.dp));SearchField(query,{ query=it },"Search your reading history","Clear history search")
+            Row(Modifier.bleed(24.dp).horizontalScroll(rememberScrollState()).padding(horizontal=24.dp).padding(top=12.dp,bottom=4.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)) { listOf("All reads","Completed","Partial").forEach { value -> ChoiceChip(value,filter==value,{ filter=value }) } }
         }
         if(filtered.isEmpty()) item { EmptyState(Icons.Rounded.HistoryEdu,if(entries.isEmpty()) "Keep a record of your reading" else "No matching entries",if(entries.isEmpty()) "Add a finished book or record how far you got. You can log books even without an audio file." else "Try another search or filter.",action={ OutlinedButton(onAdd) { Text("Log a book") } }) }
         items(filtered,key={ it.id }) { entry ->
-            Surface(Modifier.fillMaxWidth().clickable { onEdit(entry) },shape=RoundedCornerShape(20.dp),color=MaterialTheme.colorScheme.surfaceVariant) {
-                Column(Modifier.padding(18.dp)) {
+            Surface(onClick={ onEdit(entry) },modifier=Modifier.fillMaxWidth(),shape=MaterialTheme.shapes.large,color=MaterialTheme.colorScheme.surfaceContainer) {
+                Column(Modifier.padding(start=16.dp,end=6.dp,top=14.dp,bottom=16.dp)) {
                     Row(verticalAlignment=Alignment.CenterVertically) {
-                        Cover(Book(title=entry.title,author=entry.author),Modifier.width(48.dp).height(64.dp))
-                        Spacer(Modifier.width(14.dp));Column(Modifier.weight(1f)) { Text(entry.title,style=MaterialTheme.typography.titleMedium,maxLines=2,overflow=TextOverflow.Ellipsis);if(entry.author.isNotBlank()) Text(entry.author,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant,maxLines=1,overflow=TextOverflow.Ellipsis) }
-                        IconAction(Icons.Rounded.Edit,"Edit reading entry: ${entry.title}",{ onEdit(entry) })
-                        IconAction(Icons.Rounded.DeleteOutline,"Delete reading entry: ${entry.title}",{ deleting=entry.id })
+                        Cover(Book(title=entry.title,author=entry.author),Modifier.width(44.dp).height(60.dp))
+                        Spacer(Modifier.width(14.dp));Column(Modifier.weight(1f)) { Text(entry.title,style=MaterialTheme.typography.titleMedium,maxLines=2,overflow=TextOverflow.Ellipsis);if(entry.author.isNotBlank()) Text(entry.author,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant,maxLines=1,overflow=TextOverflow.Ellipsis);Text(LocalDate.parse(entry.loggedOn).format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)),style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.padding(top=2.dp)) }
+                        IconAction(Icons.Rounded.Edit,"Edit reading entry: ${entry.title}",{ onEdit(entry) },tint=MaterialTheme.colorScheme.onSurfaceVariant)
+                        IconAction(Icons.Rounded.DeleteOutline,"Delete reading entry: ${entry.title}",{ deleting=entry.id },tint=MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Spacer(Modifier.height(16.dp));FlowRow(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalArrangement=Arrangement.spacedBy(4.dp)) { Text(if(entry.percent==100) "Completed · 100% read" else "${entry.percent}% read",style=MaterialTheme.typography.titleSmall,color=MaterialTheme.colorScheme.primary);Text(LocalDate.parse(entry.loggedOn).format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant) }
-                    LinearProgressIndicator(progress={ entry.percent/100f },modifier=Modifier.fillMaxWidth().padding(top=10.dp).height(4.dp),drawStopIndicator={})
-                    if(entry.duration>0) Text("${duration(entry.position)} of ${duration(entry.duration)}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.padding(top=8.dp))
-                    if(entry.notes.isNotBlank()) Text(entry.notes,style=MaterialTheme.typography.bodyMedium,maxLines=3,overflow=TextOverflow.Ellipsis,modifier=Modifier.padding(top=12.dp))
+                    Column(Modifier.padding(end=10.dp)) {
+                        Spacer(Modifier.height(14.dp));Row(verticalAlignment=Alignment.CenterVertically) { if(entry.percent==100) { Icon(Icons.Rounded.CheckCircle,null,Modifier.size(16.dp),tint=MaterialTheme.colorScheme.primary);Spacer(Modifier.width(6.dp)) };Text(if(entry.percent==100) "Completed · 100% read" else "${entry.percent}% read",style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary,modifier=Modifier.weight(1f));if(entry.duration>0) Text("${duration(entry.position)} of ${duration(entry.duration)}",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant) }
+                        ProgressBar(entry.percent/100f,Modifier.padding(top=8.dp))
+                        if(entry.notes.isNotBlank()) Text(entry.notes,style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurface.copy(alpha=.85f),maxLines=3,overflow=TextOverflow.Ellipsis,modifier=Modifier.padding(top=12.dp))
+                    }
                 }
             }
         }
     }
     entries.firstOrNull { it.id==deleting }?.let { entry -> AlertDialog(onDismissRequest={ deleting="" },title={ Text("Delete this reading entry?") },text={ Text("Remove the history record for ${entry.title}? Your library book and its listening progress stay saved.") },confirmButton={ TextButton({ onDelete(entry.id);deleting="" }) { Text("Delete entry") } },dismissButton={ TextButton({ deleting="" }) { Text("Cancel") } }) }
 }
-@Composable private fun HistoryCount(value:String,label:String,modifier:Modifier) { Surface(modifier,shape=RoundedCornerShape(18.dp),color=MaterialTheme.colorScheme.primaryContainer) { Column(Modifier.padding(18.dp)) { Text(value,style=MaterialTheme.typography.headlineMedium);Text(label,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant) } } }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun ReadingEntryEditor(entry:ReadingEntry,books:List<Book>,saving:Boolean,onDismiss:()->Unit,onSave:(ReadingEntry)->Unit) {
