@@ -1,0 +1,76 @@
+name: Android checks and releases
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*.*.*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: sonder-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - name: Install SDK 36
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Build, test, and lint
+        run: ./gradlew --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest :app:testDebugUnitTest :app:assembleRelease :app:bundleRelease :app:lintRelease
+  release:
+    needs: checks
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: sonder-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v5
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - name: Resolve version and skip published releases
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(python3 scripts/version.py)
+          if [[ "$GITHUB_REF" == refs/tags/* && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo 'Tag does not match app version.' >&2
+            exit 1
+          fi
+          echo "name=$version" >> "$GITHUB_OUTPUT"
+          if gh release view "v$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'publish=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'publish=true' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Install SDK 36
+        if: steps.version.outputs.publish == 'true'
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Build release
+        if: steps.version.outputs.publish == 'true'
+        run: ./gradlew --no-daemon :app:assembleRelease :app:bundleRelease
+      - name: Sign and verify release
+        if: steps.version.outputs.publish == 'true'
+        env:
+          SONDER_KEYSTORE_B64: ${{ secrets.SONDER_KEYSTORE_B64 }}
+          SONDER_KEYSTORE_PASSWORD: ${{ secrets.SONDER_KEYSTORE_PASSWORD }}
+        run: python3 scripts/sign_release.py
+      - name: Publish APK, bundle, and checksums
+        if: steps.version.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.version.outputs.name }}
+        run: gh release create "v$RELEASE_VERSION" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Sonder $RELEASE_VERSION" --notes-file RELEASE_NOTES.md --latest

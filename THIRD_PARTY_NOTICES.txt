@@ -1,0 +1,20 @@
+Sonder uses the following open-source components under the Apache License 2.0:
+
+AndroidX Activity, Compose, Core, DocumentFile, Lifecycle, and Media3
+Copyright The Android Open Source Project
+https://android.googlesource.com/platform/frameworks/support/
+https://github.com/androidx/media
+
+Kotlin and Kotlin coroutines
+Copyright JetBrains s.r.o. and Kotlin contributors
+https://github.com/JetBrains/kotlin
+https://github.com/Kotlin/kotlinx.coroutines
+
+Guava and failureaccess
+Copyright Google LLC and Guava contributors
+https://github.com/google/guava
+
+Android platform SQLite is provided by the operating system and is in the public domain.
+JUnit and the AndroidX testing tools are used for development tests and are not included in release APKs.
+
+See app/src/main/assets/apache-2.0.txt for the Apache License 2.0.
