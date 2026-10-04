@@ -4,6 +4,7 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.os.Bundle
 import android.os.SystemClock
+import app.sonder.R
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.PlaybackParameters
@@ -11,6 +12,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import androidx.media3.session.SessionCommand
@@ -50,6 +52,7 @@ class PlaybackService : MediaSessionService() {
     }
     override fun onCreate() {
         super.onCreate()
+        setMediaNotificationProvider(DefaultMediaNotificationProvider.Builder(this).build().also { it.setSmallIcon(R.drawable.ic_stat_sonder) })
         player=ExoPlayer.Builder(this).setSeekBackIncrementMs(app.preferences.settings.value.rewind*1000L).setSeekForwardIncrementMs(app.preferences.settings.value.forward*1000L).build().apply {
             setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_SPEECH).build(),true)
             setHandleAudioBecomingNoisy(true);setWakeMode(C.WAKE_MODE_LOCAL)

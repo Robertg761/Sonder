@@ -11,6 +11,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
@@ -55,7 +57,7 @@ import app.sonder.data.*
 @Composable fun ChapterRow(index:Int,chapter:Chapter,active:Boolean,onClick:()->Unit) {
     Surface(onClick=onClick,color=if(active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.background,shape=MaterialTheme.shapes.medium,modifier=Modifier.fillMaxWidth()) {
         Row(Modifier.padding(horizontal=12.dp,vertical=14.dp),verticalAlignment=Alignment.CenterVertically) {
-            if(active) Icon(Icons.Rounded.GraphicEq,"Current chapter",Modifier.width(32.dp),tint=MaterialTheme.colorScheme.primary) else Text("%02d".format(index+1),modifier=Modifier.width(32.dp),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            if(active) Box(Modifier.width(32.dp).semantics { contentDescription="Current chapter" }) { WaveBars() } else Text("%02d".format(index+1),modifier=Modifier.width(32.dp),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.width(12.dp));Column(Modifier.weight(1f)) { Text(chapter.title,style=MaterialTheme.typography.titleSmall,maxLines=2,overflow=TextOverflow.Ellipsis);Text(clock(chapter.start),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant) };Text(duration(chapter.end-chapter.start),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

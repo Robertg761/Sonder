@@ -1,0 +1,4 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="@color/sonder_amber" android:pathData="M35,33h38a2,2 0,0 1,2 2v0.5a2,2 0,0 1,-2 2h-38a2,2 0,0 1,-2 -2v-0.5a2,2 0,0 1,2 -2zM35,70.5h38a2,2 0,0 1,2 2v0.5a2,2 0,0 1,-2 2h-38a2,2 0,0 1,-2 -2v-0.5a2,2 0,0 1,2 -2z"/>
+    <path android:strokeColor="@color/sonder_paper" android:strokeWidth="2.6" android:strokeLineCap="round" android:pathData="M38,50V58M42,46V62M46,52V56M50,42V66M54,47V61M58,40V68M62,49V59M66,45V63M70,51V57"/>
+</vector>
