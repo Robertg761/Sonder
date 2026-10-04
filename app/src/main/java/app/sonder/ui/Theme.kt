@@ -11,20 +11,21 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-val Forest=Color(0xFF285C4D)
-val Cream=Color(0xFFF8F7F2)
-val Gold=Color(0xFFDEA665)
+// Brand colors from the app icon: ink covers the page, amber binds the book, paper is the waveform.
+val Ink=Color(0xFF101820)
+val Amber=Color(0xFFF6A94B)
+val Paper=Color(0xFFF2E8D5)
 // Every Material 3 role is set so dialogs, menus, switches, and snackbars stay in the Sonder palette instead of the baseline purple.
-private val Light=lightColorScheme(primary=Forest,onPrimary=Color.White,primaryContainer=Color(0xFFDCE8DF),onPrimaryContainer=Color(0xFF113A2D),inversePrimary=Color(0xFFADCFB5),
-    secondary=Color(0xFF8A5A33),onSecondary=Color.White,secondaryContainer=Color(0xFFEDE6D8),onSecondaryContainer=Color(0xFF3A2A17),tertiary=Color(0xFF9A6A2E),onTertiary=Color.White,tertiaryContainer=Color(0xFFF6E3C6),onTertiaryContainer=Color(0xFF3B2604),
-    background=Cream,onBackground=Color(0xFF232B26),surface=Cream,onSurface=Color(0xFF232B26),surfaceVariant=Color(0xFFE6E7DE),onSurfaceVariant=Color(0xFF5D665B),surfaceTint=Forest,
-    inverseSurface=Color(0xFF2A322D),inverseOnSurface=Color(0xFFEEF1E9),outline=Color(0xFF8F968A),outlineVariant=Color(0xFFD8DACF),scrim=Color.Black,
-    surfaceBright=Cream,surfaceDim=Color(0xFFDAD9D2),surfaceContainerLowest=Color.White,surfaceContainerLow=Color(0xFFF2F1EB),surfaceContainer=Color(0xFFEDECE5),surfaceContainerHigh=Color(0xFFE8E7DF),surfaceContainerHighest=Color(0xFFE2E2D9))
-private val Dark=darkColorScheme(primary=Color(0xFFADCFB5),onPrimary=Color(0xFF0F3526),primaryContainer=Color(0xFF2A4637),onPrimaryContainer=Color(0xFFD3E8D6),inversePrimary=Forest,
-    secondary=Gold,onSecondary=Color(0xFF3F2A10),secondaryContainer=Color(0xFF39342A),onSecondaryContainer=Color(0xFFEDE1CB),tertiary=Color(0xFFE7C38E),onTertiary=Color(0xFF412C06),tertiaryContainer=Color(0xFF5B4219),onTertiaryContainer=Color(0xFFFBE0B6),
-    background=Color(0xFF121A16),onBackground=Color(0xFFE6EBE3),surface=Color(0xFF121A16),onSurface=Color(0xFFE6EBE3),surfaceVariant=Color(0xFF2B3630),onSurfaceVariant=Color(0xFFB9C3B5),surfaceTint=Color(0xFFADCFB5),
-    inverseSurface=Color(0xFFE6EBE3),inverseOnSurface=Color(0xFF263029),outline=Color(0xFF87918A),outlineVariant=Color(0xFF38443C),scrim=Color.Black,
-    surfaceBright=Color(0xFF38423C),surfaceDim=Color(0xFF121A16),surfaceContainerLowest=Color(0xFF0D1411),surfaceContainerLow=Color(0xFF18211C),surfaceContainer=Color(0xFF1C2620),surfaceContainerHigh=Color(0xFF242E28),surfaceContainerHighest=Color(0xFF2E3832))
+private val Light=lightColorScheme(primary=Color(0xFF8F5410),onPrimary=Color.White,primaryContainer=Color(0xFFFCE1BA),onPrimaryContainer=Color(0xFF2F1B00),inversePrimary=Amber,
+    secondary=Color(0xFF3A4A60),onSecondary=Color.White,secondaryContainer=Color(0xFFDCE3EC),onSecondaryContainer=Color(0xFF142233),tertiary=Color(0xFF2F5F86),onTertiary=Color.White,tertiaryContainer=Color(0xFFD2E6F8),onTertiaryContainer=Color(0xFF0B2236),
+    background=Color(0xFFF6F1E7),onBackground=Color(0xFF141B24),surface=Color(0xFFF6F1E7),onSurface=Color(0xFF141B24),surfaceVariant=Color(0xFFE7E1D5),onSurfaceVariant=Color(0xFF5B6370),surfaceTint=Color(0xFF8F5410),
+    inverseSurface=Color(0xFF1B2430),inverseOnSurface=Color(0xFFEFE9DD),outline=Color(0xFF8B909A),outlineVariant=Color(0xFFD9D3C6),scrim=Color.Black,
+    surfaceBright=Color(0xFFF6F1E7),surfaceDim=Color(0xFFDDD7CA),surfaceContainerLowest=Color.White,surfaceContainerLow=Color(0xFFF1ECE1),surfaceContainer=Color(0xFFECE6DA),surfaceContainerHigh=Color(0xFFE6E0D3),surfaceContainerHighest=Color(0xFFE0DACC))
+private val Dark=darkColorScheme(primary=Amber,onPrimary=Color(0xFF2A1800),primaryContainer=Color(0xFF3D2C14),onPrimaryContainer=Color(0xFFFFDDB0),inversePrimary=Color(0xFF8F5410),
+    secondary=Color(0xFFE6DAC4),onSecondary=Color(0xFF2A2418),secondaryContainer=Color(0xFF2A3443),onSecondaryContainer=Color(0xFFE3E8EF),tertiary=Color(0xFF9CC3E6),onTertiary=Color(0xFF0B2236),tertiaryContainer=Color(0xFF1E3A55),onTertiaryContainer=Color(0xFFD2E6F8),
+    background=Ink,onBackground=Color(0xFFECE5D8),surface=Ink,onSurface=Color(0xFFECE5D8),surfaceVariant=Color(0xFF253041),onSurfaceVariant=Color(0xFFA8B0BB),surfaceTint=Amber,
+    inverseSurface=Color(0xFFECE5D8),inverseOnSurface=Color(0xFF1B2430),outline=Color(0xFF7D8794),outlineVariant=Color(0xFF2C3747),scrim=Color.Black,
+    surfaceBright=Color(0xFF2B3647),surfaceDim=Ink,surfaceContainerLowest=Color(0xFF0B1119),surfaceContainerLow=Color(0xFF151E29),surfaceContainer=Color(0xFF19232F),surfaceContainerHigh=Color(0xFF202B38),surfaceContainerHighest=Color(0xFF283442))
 private val Shape=Shapes(extraSmall=RoundedCornerShape(8.dp),small=RoundedCornerShape(12.dp),medium=RoundedCornerShape(16.dp),large=RoundedCornerShape(20.dp),extraLarge=RoundedCornerShape(28.dp))
 private val Type=Typography(
     displaySmall=TextStyle(fontFamily=FontFamily.Serif,fontWeight=FontWeight.Normal,fontSize=36.sp,lineHeight=42.sp),

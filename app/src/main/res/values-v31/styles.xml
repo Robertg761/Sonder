@@ -1,0 +1,4 @@
+<resources>
+    <!-- Android 12+ splash: the mark on ink in both light and dark mode. -->
+    <style name="Theme.Sonder" parent="Base.Theme.Sonder"><item name="android:windowSplashScreenBackground">@color/sonder_ink</item><item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item></style>
+</resources>

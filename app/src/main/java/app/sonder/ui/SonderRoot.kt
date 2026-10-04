@@ -23,6 +23,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -135,15 +136,18 @@ import kotlinx.coroutines.launch
     val header:@Composable (Modifier)->Unit = { modifier ->
         Column(modifier) {
             PageHeader(if(collection.isBlank()) "Your library" else collection,if(collection.isBlank()) "${books.size} ${if(books.size==1) "audiobook" else "audiobooks"}" else "Collection",action=if(collection.isNotEmpty()) { { IconAction(Icons.Rounded.Close,"Clear collection filter",onClearCollection) } } else { { PageAction(Icons.Rounded.Add,"Import audiobooks",onImport) } })
-            Spacer(Modifier.height(16.dp));SearchField(query,{ query=it },"Search books, authors, narrators","Clear search")
-            Row(Modifier.bleed(24.dp).horizontalScroll(rememberScrollState()).padding(horizontal=24.dp).padding(top=12.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)) { listOf("All books","In progress","Unstarted","Finished").forEach { label -> ChoiceChip("$label · ${counts[label] ?: 0}",filter==label,{ filter=label }) } }
+            // Search and filters only once there is something to search.
+            if(books.isNotEmpty()) {
+                Spacer(Modifier.height(16.dp));SearchField(query,{ query=it },"Search books, authors, narrators","Clear search")
+                Row(Modifier.bleed(24.dp).horizontalScroll(rememberScrollState()).padding(horizontal=24.dp).padding(top=12.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)) { listOf("All books","In progress","Unstarted","Finished").forEach { label -> ChoiceChip("$label · ${counts[label] ?: 0}",filter==label,{ filter=label }) } }
+            }
         }
     }
     Column(Modifier.fillMaxSize()) {
         if(books.isEmpty()) LazyColumn(Modifier.weight(1f)) { item { header(Modifier.padding(start=24.dp,end=24.dp,top=16.dp)) }; item {
             Column(Modifier.fillMaxWidth().padding(top=24.dp),horizontalAlignment=Alignment.CenterHorizontally) {
-                ShelfIllustration()
-                EmptyState(Icons.Rounded.Headphones,"Make room for a good story","Bring your audiobooks together. Pick a book, press play, and settle in.",action={ Button(onImport,shape=MaterialTheme.shapes.medium,modifier=Modifier.heightIn(min=52.dp)) { Icon(Icons.Rounded.Add,null);Spacer(Modifier.width(8.dp));Text("Add your first audiobook") } })
+                SonderMark(Modifier.size(112.dp))
+                EmptyState(null,"Make room for a good story","Bring your audiobooks together. Pick a book, press play, and settle in.",action={ Button(onImport,shape=MaterialTheme.shapes.medium,modifier=Modifier.heightIn(min=52.dp)) { Icon(Icons.Rounded.Add,null);Spacer(Modifier.width(8.dp));Text("Add your first audiobook") } })
             }
         } }
         else LazyVerticalGrid(columns=if(grid) GridCells.Adaptive(145.dp) else GridCells.Fixed(1),contentPadding=PaddingValues(start=24.dp,end=24.dp,top=16.dp,bottom=24.dp),horizontalArrangement=Arrangement.spacedBy(16.dp),verticalArrangement=Arrangement.spacedBy(if(grid) 20.dp else 4.dp),modifier=Modifier.weight(1f).testTag("libraryGrid")) {
@@ -157,24 +161,13 @@ import kotlinx.coroutines.launch
             if(filtered.isEmpty()) item(span={ GridItemSpan(maxLineSpan) }) { EmptyState(Icons.Rounded.SearchOff,"No matching books","Try another search or filter.") }
             items(filtered,key={ it.id }) { b ->
                 if(grid) Column(Modifier.fillMaxWidth().combinedClickable(onClick={ onBook(b) },onLongClickLabel="Book options",onLongClick={ onOptions(b) }).testTag("shelfBook-${b.id}")) {
-                    Box { Cover(b,Modifier.fillMaxWidth().aspectRatio(.72f));if(b.favorite) Surface(Modifier.align(Alignment.TopEnd).padding(8.dp),color=Cream.copy(alpha=.92f),shape=CircleShape) { Icon(Icons.Rounded.Favorite,"Favorite",Modifier.padding(5.dp).size(14.dp),tint=Forest) };if(b.inProgress) ProgressBar(b.progress,Modifier.align(Alignment.BottomCenter).padding(10.dp),3.dp) }
+                    Box { Cover(b,Modifier.fillMaxWidth().aspectRatio(.72f));if(b.favorite) Surface(Modifier.align(Alignment.TopEnd).padding(8.dp),color=Paper.copy(alpha=.94f),shape=CircleShape) { Icon(Icons.Rounded.Favorite,"Favorite",Modifier.padding(5.dp).size(14.dp),tint=Color(0xFF8F5410)) };if(b.inProgress) ProgressBar(b.progress,Modifier.align(Alignment.BottomCenter).padding(10.dp),3.dp) }
                     Spacer(Modifier.height(10.dp));Text(b.title,style=MaterialTheme.typography.titleSmall,maxLines=2,overflow=TextOverflow.Ellipsis);Text(b.author,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant,maxLines=1,overflow=TextOverflow.Ellipsis);Spacer(Modifier.height(4.dp));Text(if(b.finished) "Finished" else if(b.inProgress) "${(b.progress*100).toInt()}% · ${duration(b.duration-b.position)} left" else "${duration(b.duration)} · ${b.format}",style=MaterialTheme.typography.labelMedium,color=if(b.finished || b.inProgress) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                 } else BookRow(b,{ onBook(b) },onOptions={ onOptions(b) })
             }
         }
     }
 }
-@Composable private fun ShelfIllustration() {
-    Row(Modifier.widthIn(max=280.dp).height(140.dp).padding(horizontal=16.dp),verticalAlignment=Alignment.Bottom,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-        listOf(Forest,Gold,androidx.compose.ui.graphics.Color(0xFF9B6C62)).forEachIndexed { i,color ->
-            Box(Modifier.weight(1f).height(listOf(118,140,102)[i].dp).clip(RoundedCornerShape(topStart=8.dp,topEnd=8.dp)).background(color),contentAlignment=Alignment.Center) {
-                Column(horizontalAlignment=Alignment.CenterHorizontally) { Icon(listOf(Icons.Rounded.NightsStay,Icons.Rounded.WbSunny,Icons.Rounded.Spa)[i],null,Modifier.size(30.dp),tint=Cream.copy(alpha=.8f));Spacer(Modifier.height(18.dp));Box(Modifier.width(28.dp).height(2.dp).background(Cream.copy(alpha=.5f))) }
-            }
-        }
-    }
-    HorizontalDivider(Modifier.width(280.dp),thickness=5.dp,color=MaterialTheme.colorScheme.outlineVariant)
-}
-
 @Composable private fun CollectionsScreen(books:List<Book>,onCollection:(String)->Unit,onEdit:(Book)->Unit) {
     var create by remember { mutableStateOf(false) };var name by remember { mutableStateOf("") };var chosen by remember { mutableStateOf(setOf<Long>()) }
     val groups=books.filter { it.collection.isNotBlank() }.groupBy { it.collection }

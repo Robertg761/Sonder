@@ -16,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -27,6 +28,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -41,7 +43,7 @@ import kotlin.math.absoluteValue
 
 @Composable fun Cover(book:Book,modifier:Modifier=Modifier,large:Boolean=false) {
     val bitmap by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null,book.cover) { value=withContext(Dispatchers.IO) { if(book.cover.isBlank()) null else runCatching { BitmapFactory.decodeFile(book.cover)?.asImageBitmap() }.getOrNull() } }
-    val palette=listOf(Color(0xFF334F48) to Color(0xFFE1C298),Color(0xFF7E462D) to Color(0xFFF3D4A3),Color(0xFF394664) to Color(0xFFCFDBDD),Color(0xFF77545F) to Color(0xFFE9C7B4),Color(0xFF5A634A) to Color(0xFFE4DBB1))
+    val palette=listOf(Color(0xFF1E2A3A) to Color(0xFFF6C27A),Color(0xFF5A2E2A) to Color(0xFFF2D2A9),Color(0xFF24414A) to Color(0xFFCFE3DD),Color(0xFF3F3352) to Color(0xFFEBC9B8),Color(0xFF4A4030) to Color(0xFFE9DAB2))
     val (base,accent)=palette[(book.title.hashCode().toLong().absoluteValue%palette.size).toInt()]
     Box(modifier.clip(RoundedCornerShape(if(large) 14.dp else 8.dp)).background(base).clearAndSetSemantics { contentDescription="Cover of ${book.title}" }) {
         if(bitmap!=null) Image(bitmap!!,null,Modifier.fillMaxSize(),contentScale=ContentScale.Crop)
@@ -67,10 +69,31 @@ import kotlin.math.absoluteValue
         }
     }
 }
+// The app icon's mark: two amber covers holding a page-edge waveform. On a tile it matches the launcher icon exactly.
+private val MarkWave=listOf(50f to 58f,46f to 62f,52f to 56f,42f to 66f,47f to 61f,40f to 68f,49f to 59f,45f to 63f,51f to 57f)
+@Composable fun SonderMark(modifier:Modifier=Modifier,tile:Boolean=true) {
+    val covers=if(tile) Amber else MaterialTheme.colorScheme.primary
+    val pages=if(tile) Paper else MaterialTheme.colorScheme.onSurface
+    Canvas(modifier.then(if(tile) Modifier.clip(RoundedCornerShape(23)).background(Ink) else Modifier).semantics { contentDescription="Sonder" }) {
+        // Tile: the launcher's visible 72-unit window of the 108-unit icon grid. Glyph: just the mark's 42-unit bounds.
+        val (origin,span)=if(tile) 18f to 72f else 33f to 42f
+        val k=size.minDimension/span
+        fun x(v:Float)=(v-origin)*k
+        listOf(33f,70.5f).forEach { top -> drawRoundRect(covers,Offset(x(33f),x(top)),androidx.compose.ui.geometry.Size(42f*k,4.5f*k),CornerRadius(2f*k)) }
+        MarkWave.forEachIndexed { i,(top,bottom) -> val cx=x(38f+i*4f);drawLine(pages,Offset(cx,x(top)),Offset(cx,x(bottom)),2.6f*k,StrokeCap.Round) }
+    }
+}
+// Small static waveform in the mark's style, used to flag the current chapter.
+@Composable fun WaveBars(modifier:Modifier=Modifier,color:Color=MaterialTheme.colorScheme.primary) {
+    Canvas(modifier.size(18.dp)) {
+        val heights=listOf(.45f,.85f,.6f,1f,.5f);val gap=size.width/heights.size
+        heights.forEachIndexed { i,h -> val cx=gap*(i+.5f);drawLine(color,Offset(cx,size.height*(1-h)/2),Offset(cx,size.height*(1+h)/2),gap*.55f,StrokeCap.Round) }
+    }
+}
 @Composable fun IconAction(icon:ImageVector,label:String,onClick:()->Unit,modifier:Modifier=Modifier,tint:Color=MaterialTheme.colorScheme.onSurface) { IconButton(onClick,modifier) { Icon(icon,label,tint=tint) } }
-@Composable fun EmptyState(icon:ImageVector,title:String,body:String,modifier:Modifier=Modifier,action:(@Composable ()->Unit)?=null) {
+@Composable fun EmptyState(icon:ImageVector?,title:String,body:String,modifier:Modifier=Modifier,action:(@Composable ()->Unit)?=null) {
     Column(modifier.fillMaxWidth().padding(30.dp),horizontalAlignment=Alignment.CenterHorizontally) {
-        Box(Modifier.size(72.dp).clip(MaterialTheme.shapes.extraLarge).background(MaterialTheme.colorScheme.primaryContainer),contentAlignment=Alignment.Center) { Icon(icon,null,Modifier.size(32.dp),tint=MaterialTheme.colorScheme.primary) }
+        if(icon!=null) Box(Modifier.size(72.dp).clip(MaterialTheme.shapes.extraLarge).background(MaterialTheme.colorScheme.primaryContainer),contentAlignment=Alignment.Center) { Icon(icon,null,Modifier.size(32.dp),tint=MaterialTheme.colorScheme.primary) }
         Spacer(Modifier.height(20.dp));Text(title,style=MaterialTheme.typography.headlineSmall,textAlign=TextAlign.Center);Spacer(Modifier.height(8.dp));Text(body,color=MaterialTheme.colorScheme.onSurfaceVariant,textAlign=TextAlign.Center,style=MaterialTheme.typography.bodyMedium,modifier=Modifier.widthIn(max=320.dp));if(action!=null) { Spacer(Modifier.height(24.dp));action() }
     }
 }
