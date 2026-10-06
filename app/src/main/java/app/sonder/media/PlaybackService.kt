@@ -45,15 +45,19 @@ class PlaybackService : MediaSessionService() {
     private var chapters:List<Chapter> = emptyList()
     private var timerDeadline=0L
     private var chapterDeadline:Long?=null
+    private var resumeRewindPending=false
+    private var playedCurrentQueue=false
     companion object {
         const val TIMER="app.sonder.SLEEP_TIMER"
         private val timerState=MutableStateFlow(0L)
         val timer=timerState.asStateFlow() // -1 means end of chapter; positive means remaining milliseconds.
+        private const val RESUME_REWIND_MS=5000L
     }
     override fun onCreate() {
         super.onCreate()
         setMediaNotificationProvider(DefaultMediaNotificationProvider.Builder(this).build().also { it.setSmallIcon(R.drawable.ic_stat_sonder) })
         player=ExoPlayer.Builder(this).setSeekBackIncrementMs(app.preferences.settings.value.rewind*1000L).setSeekForwardIncrementMs(app.preferences.settings.value.forward*1000L).build().apply {
+            // Speech makes Media3 pause for notification focus requests, including requests to duck.
             setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_SPEECH).build(),true)
             setHandleAudioBecomingNoisy(true);setWakeMode(C.WAKE_MODE_LOCAL)
             trackSelectionParameters=trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_VIDEO,true).build()
@@ -84,14 +88,31 @@ class PlaybackService : MediaSessionService() {
             override fun onMediaItemTransition(mediaItem:androidx.media3.common.MediaItem?,reason:Int) {
                 save()
                 val id=mediaItem?.mediaMetadata?.extras?.getLong("bookId") ?: 0
+                if(id!=lastBook || reason==Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) clearResumeRewind()
                 if(id!=lastBook) { lastBook=id;accumulated=0;if(chapterDeadline!=null) timerState.value=0;chapterDeadline=null }
                 scope.launch { runCatching { app.store.chapters(id) }.onSuccess { chapters=it }.onFailure { android.util.Log.e("Sonder","Chapter lookup failed",it);chapters=emptyList() } }
                 lastRevision=mediaItem?.mediaMetadata?.extras?.getLong("progressRevision") ?: 0
                 snapshot();lastWall=SystemClock.elapsedRealtime()
             }
-            override fun onIsPlayingChanged(isPlaying:Boolean) { account();snapshot();save() }
-            override fun onPositionDiscontinuity(oldPosition:Player.PositionInfo,newPosition:Player.PositionInfo,reason:Int) { if(player.currentMediaItem?.mediaMetadata?.extras?.getLong("bookId")==lastBook) { snapshot();save() } }
+            override fun onPlayWhenReadyChanged(playWhenReady:Boolean,reason:Int) {
+                if(!playWhenReady && playedCurrentQueue && player.playbackState!=Player.STATE_IDLE && player.playbackState!=Player.STATE_ENDED) resumeRewindPending=true
+                if(playWhenReady) rewindAfterPause()
+            }
+            override fun onPlaybackSuppressionReasonChanged(playbackSuppressionReason:Int) {
+                if(playbackSuppressionReason==Player.PLAYBACK_SUPPRESSION_REASON_TRANSIENT_AUDIO_FOCUS_LOSS && player.playWhenReady && playedCurrentQueue) resumeRewindPending=true
+                if(playbackSuppressionReason==Player.PLAYBACK_SUPPRESSION_REASON_NONE) rewindAfterPause()
+            }
+            override fun onIsPlayingChanged(isPlaying:Boolean) {
+                if(isPlaying) { rewindAfterPause();playedCurrentQueue=true }
+                account();snapshot();save()
+            }
+            override fun onPositionDiscontinuity(oldPosition:Player.PositionInfo,newPosition:Player.PositionInfo,reason:Int) {
+                // An explicit seek or bookmark jump while paused should keep the chosen position.
+                if(reason==Player.DISCONTINUITY_REASON_SEEK) resumeRewindPending=false
+                if(player.currentMediaItem?.mediaMetadata?.extras?.getLong("bookId")==lastBook) { snapshot();save() }
+            }
             override fun onPlaybackStateChanged(playbackState:Int) {
+                if(playbackState==Player.STATE_IDLE || playbackState==Player.STATE_ENDED) clearResumeRewind()
                 if(playbackState==Player.STATE_ENDED) save(true)
             }
             override fun onPlaybackParametersChanged(playbackParameters:PlaybackParameters) {
@@ -118,6 +139,22 @@ class PlaybackService : MediaSessionService() {
                 if(chapterDeadline?.let { globalPosition()>=it }==true) { player.pause();chapterDeadline=null;timerState.value=0 }
             }
         }
+    }
+    private fun clearResumeRewind() { resumeRewindPending=false;playedCurrentQueue=false }
+    private fun rewindAfterPause() {
+        if(!resumeRewindPending || !player.playWhenReady || player.playbackSuppressionReason!=Player.PLAYBACK_SUPPRESSION_REASON_NONE || player.mediaItemCount==0) return
+        // Consume first: seeking emits more player callbacks and must not rewind twice.
+        resumeRewindPending=false
+        val bookId=player.currentMediaItem?.mediaMetadata?.extras?.getLong("bookId") ?: return
+        val target=(globalPosition()-RESUME_REWIND_MS).coerceAtLeast(0)
+        var index=player.currentMediaItemIndex
+        // Rewind across track files belonging to the same book.
+        while(index>0 && (player.getMediaItemAt(index).mediaMetadata.extras?.getLong("offset") ?: 0)>target) {
+            if(player.getMediaItemAt(index-1).mediaMetadata.extras?.getLong("bookId")!=bookId) break
+            index--
+        }
+        val offset=player.getMediaItemAt(index).mediaMetadata.extras?.getLong("offset") ?: 0
+        player.seekTo(index,(target-offset).coerceAtLeast(0))
     }
     private fun account() {
         val now=SystemClock.elapsedRealtime()

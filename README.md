@@ -14,7 +14,7 @@ Install over your existing Sonder app to keep its library.
 
 ## Install and listen
 
-Open the supplied `Sonder-1.5.0.apk` on your Android phone. To update version 1.0, 1.1, 1.2, 1.3, or 1.4, install this APK over the existing app without uninstalling it. The same signing key and an in-place database migration preserve your library, progress, bookmarks, and granted folder access. Android may ask you to allow installation from the app that opened the file. Open Sonder, tap **+**, and choose files or a folder through the system picker.
+Open the supplied `Sonder-1.6.0.apk` on your Android phone. Install it over the existing app without uninstalling it to preserve your library, progress, bookmarks, and granted folder access. Android may ask you to allow installation from the app that opened the file. Open Sonder, tap **+**, and choose files or a folder through the system picker.
 
 Folders are scanned recursively. Matching album and author tags group tracks into books across file and folder selections. Untagged M4B/MP4 files and files with multiple embedded chapters remain separate books. Other untagged tracks in the same folder are grouped using the folder name. Tracks use natural filename order. The original media files stay where you selected them, so keep that folder, SD card, or document provider available. Cloud document providers must make the files available locally for offline playback. If a provider refuses persistent read permission, Sonder warns you; selecting the file again may be required after restarting.
 
@@ -27,6 +27,14 @@ The public repository is [Robertg761/Sonder](https://github.com/Robertg761/Sonde
 Sonder checks the latest stable GitHub release when it opens, at most once a day. Settings includes an automatic-check toggle and a manual check. An update notice opens release notes and a download button. Downloads use Android DownloadManager and can finish with the app closed. Return to the app to install. Downloads are checked against the GitHub SHA-256 digest and the installed app's package, version, and signing certificate. Nothing is installed silently. Android asks for install permission and confirmation. If you allow installs from Sonder in Android settings, return and tap Install update again. Cancel or retry a failed download from the update sheet. If an abrupt shutdown happens just as a download starts, check again and retry if it does not appear.
 
 The `.github/workflows/android.yml` workflow builds, tests, and lints pull requests. A push to main with a new versionName and versionCode builds and signs a release, then publishes the APK, AAB, and checksums. Existing release versions are skipped. Update `RELEASE_NOTES.md` for each release. A matching version tag or manual workflow dispatch also runs the release workflow. The two signing secrets are `SONDER_KEYSTORE_B64` and `SONDER_KEYSTORE_PASSWORD`; the private key is decoded in a temporary directory and never committed. Keep the same key for every update.
+
+## Resuming playback
+
+After pausing, press Play to resume five seconds earlier. This also works through Android media controls, including the lock screen and headset buttons. The position stays where you paused until you resume. The five-second rewind can cross track files and stops at the beginning of the book.
+
+Audible notifications that temporarily take Android audio focus pause narration, including notifications that ask other audio to lower its volume. When focus returns, Sonder resumes five seconds earlier. A manual pause during an interruption keeps playback paused. Another app taking permanent focus requires you to press Play again. Silent notifications and sounds that do not request audio focus do not interrupt playback. This follows [Android's audio-focus handling for speech](https://developer.android.com/media/optimize/audio-focus).
+
+Seeking, skipping, or jumping to a bookmark while paused keeps the position you selected. Opening a different book and normal buffering do not trigger this resume rewind. The existing **Smart rewind** setting controls the separate rewind when reopening a book.
 
 ## Reading history
 
