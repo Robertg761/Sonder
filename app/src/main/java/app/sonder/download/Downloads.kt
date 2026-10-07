@@ -20,15 +20,17 @@ data class DownloadSettings(val token:String="",val folder:String="",val site:St
 data class DownloadJob(
     val id:String=UUID.randomUUID().toString(),val title:String,val author:String="",val page:String="",val hash:String,val magnet:String,val cover:String="",
     val state:State=State.QUEUED,val message:String="Waiting to start",val progress:Float=-1f,val bytes:Long=0,val total:Long=0,
-    val torrent:String="",val folder:String="",val added:Long=System.currentTimeMillis()
+    val torrent:String="",val folder:String="",val added:Long=System.currentTimeMillis(),
+    /** Set once importing starts. From then on the library may point at the folder, so it is never deleted. */
+    val imported:Boolean=false
 ) {
     enum class State { QUEUED,WORKING,DONE,FAILED }
     val active:Boolean get()=state==State.QUEUED || state==State.WORKING
     fun json():JSONObject=JSONObject().put("id",id).put("title",title).put("author",author).put("page",page).put("hash",hash).put("magnet",magnet).put("cover",cover)
-        .put("state",state.name).put("message",message).put("torrent",torrent).put("folder",folder).put("added",added)
+        .put("state",state.name).put("message",message).put("torrent",torrent).put("folder",folder).put("added",added).put("imported",imported)
     companion object {
         fun fromJson(j:JSONObject)=DownloadJob(j.getString("id"),j.getString("title"),j.optString("author"),j.optString("page"),j.getString("hash"),j.getString("magnet"),j.optString("cover"),
-            runCatching { State.valueOf(j.getString("state")) }.getOrDefault(State.FAILED),j.optString("message"),torrent=j.optString("torrent"),folder=j.optString("folder"),added=j.optLong("added"))
+            runCatching { State.valueOf(j.getString("state")) }.getOrDefault(State.FAILED),j.optString("message"),torrent=j.optString("torrent"),folder=j.optString("folder"),added=j.optLong("added"),imported=j.optBoolean("imported"))
     }
 }
 
@@ -81,8 +83,7 @@ class Downloads(private val context:Context,private val importer:Importer) {
         scope.launch {
             job.second?.cancelAndJoin()
             // Keep files the library may already point to.
-            val importing=job.first.state==DownloadJob.State.WORKING && job.first.message==IMPORTING
-            if(job.first.state!=DownloadJob.State.DONE && !importing && job.first.folder.isNotBlank()) runCatching { DocumentFile.fromTreeUri(context,Uri.parse(job.first.folder))?.delete() }
+            if(job.first.state!=DownloadJob.State.DONE && !job.first.imported && job.first.folder.isNotBlank()) runCatching { DocumentFile.fromTreeUri(context,Uri.parse(job.first.folder))?.delete() }
             val token=settingsState.value.token
             if(job.first.state!=DownloadJob.State.DONE && job.first.torrent.isNotBlank() && token.isNotBlank()) runCatching { RealDebrid(token).delete(job.first.torrent) }.onFailure { android.util.Log.w("Sonder","Could not delete Real-Debrid torrent",it) }
         }
@@ -149,7 +150,7 @@ class Downloads(private val context:Context,private val importer:Importer) {
                 }
                 done+=size
             }
-            status(IMPORTING,1f,done,total)
+            update(id) { it.copy(state=DownloadJob.State.WORKING,message=IMPORTING,progress=1f,bytes=done,total=total,imported=true) }
             val result=importer.downloaded(dir.uri)
             val added=Regex("Imported (\\d+)").find(result.current)?.groupValues?.get(1)?.toIntOrNull() ?: 0
             if(added==0 && result.errors.firstOrNull()!="No new supported audio files found.") error(result.errors.firstOrNull() ?: "Sonder couldn't add this download to your library.")

@@ -18,6 +18,11 @@ class DownloadPlanTest {
         assertEquals(listOf(1),DownloadPlan.wanted(listOf(file(1,"/Book/01.mp3"))+scans).map { it.id })
         assertEquals(15,DownloadPlan.wanted(listOf(file(1,"/Book/01.mp3"))+scans+file(15,"/Book/Folder.JPG")).last().id)
     }
+    @Test fun skipsCueSheetsWhenDiscFoldersAreFlattened() {
+        val files=listOf(file(1,"/Book/CD1/01.mp3"),file(2,"/Book/CD1/CD1.cue"),file(3,"/Book/CD2/01.mp3"),file(4,"/Book/CD2/CD2.cue"))
+        assertEquals(listOf(1,3),DownloadPlan.wanted(files).map { it.id })
+        assertEquals(listOf(1,2),DownloadPlan.wanted(listOf(file(1,"/Book/01.mp3"),file(2,"/Book/Book.cue"))).map { it.id })
+    }
     @Test fun flattensDiscFoldersInOrder() {
         val files=listOf(file(1,"/Book/CD1/01.mp3"),file(2,"/Book/CD1/02.mp3"),file(3,"/Book/CD2/01.mp3"),file(4,"/Book/Art/front.jpeg"))
         assertEquals(mapOf(1 to "CD1 - 01.mp3",2 to "CD1 - 02.mp3",3 to "CD2 - 01.mp3",4 to "cover.jpg"),DownloadPlan.names(files))

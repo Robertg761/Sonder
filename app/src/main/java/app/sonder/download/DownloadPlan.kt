@@ -11,11 +11,17 @@ object DownloadPlan {
     fun extension(name:String)=name.substringAfterLast('/').substringAfterLast('.',"").lowercase()
     fun isAudio(name:String)=extension(name) in Importer.extensions
 
-    /** Audio, cue sheets, and at most one cover image. Torrent padding and macOS metadata are skipped. */
+    /**
+     * Audio, cue sheets, and at most one cover image. Torrent padding and macOS metadata are skipped.
+     * When audio spans several folders, [names] flattens them and renames the tracks, so cue sheets no longer
+     * match their files. They are skipped and the importer uses embedded or per-track chapters instead.
+     */
     fun wanted(files:List<RealDebrid.File>):List<RealDebrid.File> {
         val clean=files.filter { f -> f.path.split('/').none { it.startsWith(".pad") || it=="__MACOSX" || it.startsWith("._") } }
-        if(clean.none { isAudio(it.path) }) return emptyList()
-        return (clean.filter { isAudio(it.path) || extension(it.path)=="cue" }+listOfNotNull(cover(clean))).sortedBy { it.id }
+        val audio=clean.filter { isAudio(it.path) }
+        if(audio.isEmpty()) return emptyList()
+        val folders=audio.map { it.path.substringBeforeLast('/',"") }.distinct().size
+        return (audio+clean.filter { extension(it.path)=="cue" && folders==1 }+listOfNotNull(cover(clean))).sortedBy { it.id }
     }
     /** A named cover, or the largest of a few images. Many images usually means scanned pages, not art. */
     fun cover(files:List<RealDebrid.File>):RealDebrid.File? {
