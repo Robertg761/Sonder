@@ -28,11 +28,67 @@ object AudioBookBay {
         val host=uri.host?.lowercase()?.takeIf { it.contains('.') } ?: throw IllegalArgumentException("Enter a web address like audiobookbay.lu")
         return "https://$host"+if(uri.port>0 && uri.port!=443) ":${uri.port}" else ""
     }
-    fun searchUrl(site:String,query:String,page:Int=1):String {
-        val q=Http.encode(query.trim().lowercase())
-        return if(page<=1) "$site/?s=$q&tt=1" else "$site/page/$page/?s=$q&tt=1"
+    fun searchUrl(site:String,query:String,page:Int=1,titles:Boolean=true):String {
+        val q=Http.encode(query.trim().lowercase())+if(titles) "&tt=1" else ""
+        return if(page<=1) "$site/?s=$q" else "$site/page/$page/?s=$q"
     }
-    fun search(site:String,query:String,page:Int=1):Page = parseSearch(fetch(searchUrl(site,query,page)),site,page)
+    fun search(site:String,query:String,page:Int=1,titles:Boolean=true):Page = parseSearch(fetch(searchUrl(site,query,page,titles)),site,page)
+
+    /**
+     * One search the site understands. AudioBookBay only returns titles that contain every word, and its title
+     * search is case and punctuation sensitive, so one extra word, dash, or typo finds nothing.
+     */
+    data class Plan(val query:String,val titles:Boolean=true)
+    data class Found(val results:List<Listing>,val more:Plan?,val page:Int,val next:Boolean)
+    private val filler=setOf("the","a","an","by","and","of","audiobook","audiobooks","unabridged","narrated","read")
+    /** Lowercase words without punctuation. Apostrophes stay because the site matches them ("ender's"). */
+    fun normalize(text:String):String = text.lowercase().replace('’','\'').replace('‘','\'')
+        .replace(Regex("[^\\p{L}\\p{N}' ]+")," ").split(' ').map { it.trim('\'') }.filter { it.isNotBlank() }.joinToString(" ")
+    /** The typed search first, then looser ones: without filler words, in descriptions too, then the most distinctive words alone. */
+    fun plans(input:String):List<Plan> {
+        val words=normalize(input).split(' ').filter { it.isNotBlank() }
+        if(words.isEmpty()) return emptyList()
+        val core=words.filterNot { it in filler }.ifEmpty { words }.distinct()
+        val distinctive=core.sortedByDescending { it.length }
+        val plans=mutableListOf(Plan(words.joinToString(" ")),Plan(core.joinToString(" ")),Plan(core.joinToString(" "),titles=false))
+        if(core.size>2) plans+=Plan(core.filter { it in distinctive.take(2) }.joinToString(" "))
+        if(core.size>1) distinctive.take(2).filter { it.length>=3 }.forEach { plans+=Plan(it) }
+        return plans.distinct()
+    }
+    /** Runs [plans] until there are enough results, then orders them by how well each title matches the search. */
+    fun find(site:String,input:String,enough:Int=8):Found {
+        val found=LinkedHashMap<String,Listing>();var more:Plan?=null;var page=1;var next=false;var failure:Exception?=null
+        for(plan in plans(input)) {
+            val result=try { search(site,plan.query,1,plan.titles) } catch(e:java.io.IOException) { if(found.isEmpty()) failure=e;continue }
+            result.results.forEach { found.putIfAbsent(it.url,it) }
+            if(more==null && result.results.isNotEmpty()) { more=plan;page=result.page;next=result.next }
+            if(found.size>=enough) break
+        }
+        if(found.isEmpty() && failure!=null) throw failure
+        return Found(rank(found.values.toList(),input),more,page,next)
+    }
+    /** Best matches first; results that share no word with the search are dropped when anything matches. */
+    fun rank(results:List<Listing>,input:String):List<Listing> {
+        val words=normalize(input).split(' ').filter { it.isNotBlank() && it !in filler }.map { it.replace("'","") }
+        if(words.isEmpty()) return results
+        val scored=results.map { listing ->
+            val title=normalize(listing.title).replace("'","").split(' ')
+            listing to words.count { w -> title.any { t -> t==w || (w.length>=3 && t.startsWith(w)) || (w.length>=5 && close(w,t)) } }.toDouble()/words.size
+        }
+        val kept=if(scored.any { it.second>0 }) scored.filter { it.second>0 } else scored
+        return kept.sortedByDescending { it.second }.map { it.first }
+    }
+    /** True when two words differ by one edit, so a single typo still matches. */
+    private fun close(a:String,b:String):Boolean {
+        if(kotlin.math.abs(a.length-b.length)>1) return false
+        var i=0;var j=0;var edits=0
+        while(i<a.length && j<b.length) {
+            if(a[i]==b[j]) { i++;j++;continue }
+            if(++edits>1) return false
+            when { a.length>b.length -> i++;a.length<b.length -> j++;else -> { i++;j++ } }
+        }
+        return edits+(a.length-i)+(b.length-j)<=1
+    }
     fun details(site:String,listing:Listing):Details = parseDetails(fetch(listing.url),listing.url,site).let { d -> d.copy(cover=d.cover.ifBlank { listing.cover }) }
     private fun fetch(url:String):String {
         val response=try { Http.request(url) } catch(e:IOException) { throw IOException("Couldn't reach AudioBookBay. Check your connection or change its address in Settings.",e) }

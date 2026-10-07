@@ -40,10 +40,11 @@ import kotlinx.coroutines.withContext
     detail?.let { ListingDetails(it,jobs,onDownload={ d -> onNotification();vm.download(d) },onRetry={ vm.openListing(it.listing) });return }
     var query by rememberSaveable { mutableStateOf(state.query) }
     val focus=LocalFocusManager.current
-    LazyColumn(contentPadding=PaddingValues(start=24.dp,end=24.dp,top=4.dp,bottom=24.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+    LazyColumn(contentPadding=PaddingValues(start=24.dp,end=24.dp,top=16.dp,bottom=24.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
         item {
+            PageHeader("Find","Search AudioBookBay. Books download through Real-Debrid straight into your library.")
+            Spacer(Modifier.height(16.dp))
             SearchField(query,{ query=it },"Search titles and authors","Clear search",onSearch={ focus.clearFocus();vm.search(query) })
-            Text("Searches AudioBookBay. Downloads go through your Real-Debrid account into your download folder, then into your library.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.padding(start=4.dp,end=4.dp,top=8.dp))
         }
         if(jobs.isNotEmpty()) {
             item { Row(verticalAlignment=Alignment.CenterVertically) { Box(Modifier.weight(1f)) { SectionTitle("Downloads") };if(jobs.any { it.state==DownloadJob.State.DONE }) TextButton(vm.downloads::clearFinished) { Text("Clear finished") } } }

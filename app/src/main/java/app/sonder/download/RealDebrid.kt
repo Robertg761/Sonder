@@ -37,7 +37,8 @@ class RealDebrid(private val token:String) {
             (0 until files.length()).map { i -> files.getJSONObject(i).let { File(it.getInt("id"),it.optString("path"),it.optLong("bytes"),it.optInt("selected")==1) } },
             (0 until links.length()).map { links.getString(it) })
     }
-    fun select(id:String,files:List<Int>) { call("POST","/torrents/selectFiles/${Http.encode(id)}",mapOf("files" to files.joinToString(","))) }
+    /** Chooses which files Real-Debrid fetches. Null selects every file. */
+    fun select(id:String,files:List<Int>?) { call("POST","/torrents/selectFiles/${Http.encode(id)}",mapOf("files" to (files?.joinToString(",") ?: "all"))) }
     fun delete(id:String) { call("DELETE","/torrents/delete/${Http.encode(id)}") }
     fun unrestrict(link:String):Link = json(call("POST","/unrestrict/link",mapOf("link" to link))).let { Link(it.optString("filename"),it.optLong("filesize"),it.getString("download")) }
 
