@@ -13,9 +13,11 @@ import app.sonder.data.Book
 import app.sonder.data.ListeningStatus
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable fun BookOptionsSheet(book:Book,onDismiss:()->Unit,onStatus:(ListeningStatus)->Unit,onFavorite:()->Unit,onDetails:()->Unit,onLog:()->Unit) {
+@Composable fun BookOptionsSheet(book:Book,onDismiss:()->Unit,onStatus:(ListeningStatus)->Unit,onFavorite:()->Unit,onDetails:()->Unit,onLog:()->Unit,onDelete:()->Unit) {
     var resetConfirm by remember(book.id) { mutableStateOf(false) }
-    ModalBottomSheet(onDismissRequest=onDismiss,containerColor=MaterialTheme.colorScheme.background) {
+    var deleteConfirm by remember(book.id) { mutableStateOf(false) }
+    // Fully expanded, so every option (Delete from phone is last) is visible without dragging the sheet up.
+    ModalBottomSheet(onDismissRequest=onDismiss,containerColor=MaterialTheme.colorScheme.background,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)) {
         LazyColumn(contentPadding=PaddingValues(start=24.dp,end=24.dp,bottom=30.dp)) {
             item { Text(book.title,style=MaterialTheme.typography.headlineSmall);Text(book.author,color=MaterialTheme.colorScheme.onSurfaceVariant);Spacer(Modifier.height(20.dp));Text("Listening status",style=MaterialTheme.typography.titleSmall) }
             ListeningStatus.entries.forEach { status -> item {
@@ -29,8 +31,12 @@ import app.sonder.data.ListeningStatus
                     if(selected) Icon(Icons.Rounded.Check,"Current status")
                 }
             } }
-            item { HorizontalDivider();TextButton(onLog,Modifier.fillMaxWidth().heightIn(min=52.dp)) { Icon(Icons.Rounded.HistoryEdu,null);Spacer(Modifier.width(16.dp));Text("Add to reading history",Modifier.weight(1f)) };TextButton(onFavorite,Modifier.fillMaxWidth().heightIn(min=52.dp)) { Icon(if(book.favorite) Icons.Rounded.FavoriteBorder else Icons.Rounded.Favorite,null);Spacer(Modifier.width(16.dp));Text(if(book.favorite) "Remove from favorites" else "Add to favorites",Modifier.weight(1f)) };TextButton(onDetails,Modifier.fillMaxWidth().heightIn(min=52.dp)) { Icon(Icons.Rounded.Info,null);Spacer(Modifier.width(16.dp));Text("View book details",Modifier.weight(1f)) } }
+            item { HorizontalDivider();TextButton(onLog,Modifier.fillMaxWidth().heightIn(min=52.dp)) { Icon(Icons.Rounded.HistoryEdu,null);Spacer(Modifier.width(16.dp));Text("Add to reading history",Modifier.weight(1f)) };TextButton(onFavorite,Modifier.fillMaxWidth().heightIn(min=52.dp)) { Icon(if(book.favorite) Icons.Rounded.FavoriteBorder else Icons.Rounded.Favorite,null);Spacer(Modifier.width(16.dp));Text(if(book.favorite) "Remove from favorites" else "Add to favorites",Modifier.weight(1f)) };TextButton(onDetails,Modifier.fillMaxWidth().heightIn(min=52.dp)) { Icon(Icons.Rounded.Info,null);Spacer(Modifier.width(16.dp));Text("View book details",Modifier.weight(1f)) }
+                TextButton({ deleteConfirm=true },Modifier.fillMaxWidth().heightIn(min=52.dp),colors=ButtonDefaults.textButtonColors(contentColor=MaterialTheme.colorScheme.error)) { Icon(Icons.Rounded.DeleteForever,null);Spacer(Modifier.width(16.dp));Text("Delete from phone",Modifier.weight(1f)) } }
         }
     }
+    if(deleteConfirm) AlertDialog(onDismissRequest={ deleteConfirm=false },icon={ Icon(Icons.Rounded.DeleteForever,null) },title={ Text("Delete from your phone?") },
+        text={ Text("${book.title} and its audio files will be permanently deleted from your phone's storage, along with its progress and bookmarks. Reading history entries stay. Android may ask you to confirm.") },
+        confirmButton={ TextButton({ deleteConfirm=false;onDelete() },colors=ButtonDefaults.textButtonColors(contentColor=MaterialTheme.colorScheme.error)) { Text("Delete") } },dismissButton={ TextButton({ deleteConfirm=false }) { Text("Cancel") } })
     if(resetConfirm) AlertDialog(onDismissRequest={ resetConfirm=false },title={ Text("Mark as not started?") },text={ Text("This resets the listening position to the beginning and removes this book from Continue Listening. Your bookmarks and listening history stay saved.") },confirmButton={ TextButton({ resetConfirm=false;onStatus(ListeningStatus.NOT_STARTED) }) { Text("Mark not started") } },dismissButton={ TextButton({ resetConfirm=false }) { Text("Cancel") } })
 }

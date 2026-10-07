@@ -1,8 +1,6 @@
-Sonder 1.7.1 makes AudioBookBay search more forgiving and gives it its own tab.
+Sonder 1.7.2 can delete books from your phone and fixes menus that opened cut off.
 
-- Find is now a tab next to Library once AudioBookBay downloads are set up.
-- Searches no longer need the exact title. Capitals, dashes, extra words like "the" or "by", the author's name in any order, and a typo in one word still find the book, with the closest titles listed first.
-- Fixed downloads that could wait forever on "Real-Debrid is preparing the files". If Real-Debrid doesn't start an upload, Sonder asks for all of its files instead (only audio, chapter sheets, and the cover download to your phone), and a download that stays stuck now stops with an explanation so you can retry.
-- Waiting downloads show how long they've been waiting.
+- Hold a book and choose Delete from phone to remove it from your library and delete its audio files. Books Sonder downloaded are deleted with their whole folder. For files you added yourself, Android asks you to confirm.
+- The update screen, book options, add-books menu, and sleep timer now open fully, so every button is visible without dragging the sheet up. Long release notes scroll above the download and install buttons.
 
 Install over your existing Sonder app to keep your library and listening progress.

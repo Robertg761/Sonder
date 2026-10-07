@@ -30,9 +30,11 @@ data class UndoNotice(val message:String,val undo:()->Unit)
 data class Playback(val bookId:Long=0,val position:Long=0,val playing:Boolean=false,val buffering:Boolean=false,val speed:Float=1f,val error:String="")
 data class FindState(val query:String="",val loading:Boolean=false,val results:List<AudioBookBay.Listing> = emptyList(),val plan:AudioBookBay.Plan?=null,val page:Int=0,val next:Boolean=false,val error:String="",val searched:Boolean=false)
 data class FindDetails(val listing:AudioBookBay.Listing,val details:AudioBookBay.Details?=null,val error:String="")
+/** Shared files Android must confirm before deleting, waiting for the activity to show the system dialog. */
+data class PendingDelete(val book:Book,val sender:android.content.IntentSender,val deleted:Int,val confirm:Int,val failed:Int,val launched:Boolean=false)
 data class AccountState(val checking:Boolean=false,val user:RealDebrid.User?=null,val error:String="")
 @UnstableApi
-class LibraryViewModel(application:Application):AndroidViewModel(application) {
+class LibraryViewModel(application:Application,private val saved:androidx.lifecycle.SavedStateHandle):AndroidViewModel(application) {
     private val app=application as SonderApp
     val updater=app.updater
     val store=app.store
@@ -188,7 +190,45 @@ class LibraryViewModel(application:Application):AndroidViewModel(application) {
             offerUndo("Marked as ${status.label.lowercase()}") { perform { store.restoreStatus(before) } }
         }
     }
-    fun remove(book:Book) { perform { if(playback.value.bookId==book.id) { controller?.stop();controller?.clearMediaItems() };store.remove(book.id);if(book.cover.isNotEmpty()) withContext(Dispatchers.IO) { File(book.cover).delete() };notice("Removed from library. The original audio files are unchanged.") } }
+    private suspend fun removeBook(book:Book) { if(playback.value.bookId==book.id) { controller?.stop();controller?.clearMediaItems() };store.remove(book.id);if(book.cover.isNotEmpty()) withContext(Dispatchers.IO) { File(book.cover).delete() } }
+    fun remove(book:Book) { perform { removeBook(book);notice("Removed from library. The original audio files are unchanged.") } }
+    private val deleteState=MutableStateFlow<PendingDelete?>(null)
+    val pendingDelete=deleteState.asStateFlow()
+    /** Removes the book from the library and deletes its audio from the phone. */
+    fun deleteFromPhone(book:Book) { perform {
+        if(playback.value.bookId==book.id) { controller?.stop();controller?.clearMediaItems() }
+        val uris=store.tracks(book.id).map { Uri.parse(it.uri) }
+        val others=(store.knownUris()-uris.map { it.toString() }.toSet()).map { Uri.parse(it) }
+        // A Sonder download is deleted as its whole folder, cover and chapter sheet included, unless other books share it.
+        if(withContext(Dispatchers.IO) { downloads.deleteBookFolder(uris,others) }) { removeBook(book);notice("Deleted ${book.title} from your phone.");return@perform }
+        val result=withContext(Dispatchers.IO) { MediaFiles.delete(app,uris) }
+        val sender=withContext(Dispatchers.IO) { runCatching { MediaFiles.confirmation(app,result.confirm) }.getOrNull() }
+        if(sender!=null) {
+            // Saved so the outcome is still applied if Android stops Sonder while its confirmation is open.
+            saved["deleteBook"]=book.id;saved["deleteCounts"]=intArrayOf(result.deleted,result.confirm.size,result.failed)
+            deleteState.value=PendingDelete(book,sender,result.deleted,result.confirm.size,result.failed)
+        }
+        else finishDelete(book,result.deleted,result.failed+result.confirm.size,cancelled=false)
+    } }
+    fun deleteLaunched() { deleteState.value=deleteState.value?.copy(launched=true) }
+    fun deleteConfirmed(confirmed:Boolean) {
+        val pending=deleteState.value
+        val id=pending?.book?.id ?: saved.get<Long>("deleteBook") ?: return
+        val counts=pending?.let { intArrayOf(it.deleted,it.confirm,it.failed) } ?: saved.get<IntArray>("deleteCounts") ?: return
+        deleteState.value=null;saved.remove<Long>("deleteBook");saved.remove<IntArray>("deleteCounts")
+        perform {
+            if(pending==null) store.refresh()
+            val book=pending?.book ?: library.value.books.firstOrNull { it.id==id } ?: return@perform
+            val (deleted,confirm,failed)=counts
+            finishDelete(book,deleted+if(confirmed) confirm else 0,failed+if(confirmed) 0 else confirm,cancelled=!confirmed)
+        }
+    }
+    private suspend fun finishDelete(book:Book,deleted:Int,failed:Int,cancelled:Boolean) {
+        // Keep the book when nothing was deleted, so its files stay playable.
+        if(deleted==0 && (failed>0 || cancelled)) { notice(if(cancelled) "Nothing was deleted." else "Android didn't let Sonder delete these files. Delete them with your file manager, then remove the book.");return }
+        removeBook(book)
+        notice(if(failed==0) "Deleted ${book.title} from your phone." else "Deleted ${book.title}, but $failed ${if(failed==1) "file" else "files"} couldn't be deleted. Remove ${if(failed==1) "it" else "them"} with your file manager.")
+    }
     fun bookmark(note:String,position:Long?=null,bookId:Long?=null) { val p=playback.value;val id=bookId ?: p.bookId; if(id>0) perform { store.addBookmark(id,position ?: p.position,note.ifBlank { "Bookmark" });notice("Bookmark saved.") } }
     fun deleteBookmark(id:Long) {
         val mark=library.value.bookmarks.firstOrNull { it.id==id }

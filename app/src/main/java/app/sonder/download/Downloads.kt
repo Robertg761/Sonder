@@ -45,6 +45,8 @@ class Downloads(private val context:Context,private val importer:Importer) {
     val settings=settingsState.asStateFlow()
     private val jobState=MutableStateFlow(load())
     val jobs=jobState.asStateFlow()
+    // Downloads from before folders were recorded separately seed the record from the download list.
+    init { if(!prefs.contains("bookFolders")) prefs.edit().putStringSet("bookFolders",jobState.value.map { it.folder }.filter { it.isNotBlank() }.toSet()).apply() }
     private val lock=Any()
     private val scope=CoroutineScope(SupervisorJob()+Dispatchers.IO)
     private var current:Job?=null
@@ -83,11 +85,41 @@ class Downloads(private val context:Context,private val importer:Importer) {
         scope.launch {
             job.second?.cancelAndJoin()
             // Keep files the library may already point to.
-            if(job.first.state!=DownloadJob.State.DONE && !job.first.imported && job.first.folder.isNotBlank()) runCatching { DocumentFile.fromTreeUri(context,Uri.parse(job.first.folder))?.delete() }
+            if(job.first.state!=DownloadJob.State.DONE && !job.first.imported && job.first.folder.isNotBlank()) runCatching { if(DocumentFile.fromTreeUri(context,Uri.parse(job.first.folder))?.delete()==true) keepFolder(job.first.folder,false) }
             val token=settingsState.value.token
             if(job.first.state!=DownloadJob.State.DONE && job.first.torrent.isNotBlank() && token.isNotBlank()) runCatching { RealDebrid(token).delete(job.first.torrent) }.onFailure { android.util.Log.w("Sonder","Could not delete Real-Debrid torrent",it) }
         }
     }
+    /**
+     * Book folders Sonder created, kept apart from the visible download list so clearing finished downloads
+     * doesn't forget which folders Delete from phone may remove whole.
+     */
+    private fun bookFolders():Set<String> = prefs.getStringSet("bookFolders",null).orEmpty().toSet()
+    private fun keepFolder(uri:String,keep:Boolean) { synchronized(lock) { prefs.edit().putStringSet("bookFolders",if(keep) bookFolders()+uri else bookFolders()-uri).apply() } }
+    /**
+     * Deletes the book folder a download created when [tracks] all live in it, and forgets it and its download so
+     * the book can be downloaded again. Returns false when the tracks didn't come from a Sonder download, when that
+     * download is still running, or when [others] (other books' tracks) also live in the folder, as when one upload
+     * held several books.
+     */
+    fun deleteBookFolder(tracks:List<Uri>,others:List<Uri> = emptyList()):Boolean {
+        if(tracks.isEmpty()) return false
+        // Document IDs are opaque, so membership comes from the provider's own child listing. Downloads are
+        // flattened, so every track is a direct child of its book folder.
+        fun key(uri:Uri)=runCatching { "${uri.authority}|${android.provider.DocumentsContract.getDocumentId(uri)}" }.getOrNull()
+        val ids=tracks.map { key(it) ?: return false }.toSet()
+        val running=jobState.value.filter { it.active }.map { it.folder }.toSet()
+        val candidates=bookFolders().filter { it !in running && Uri.parse(it).authority==tracks.first().authority }
+        val (folder,children)=candidates.firstNotNullOfOrNull { uri -> children(Uri.parse(uri))?.takeIf { it.containsAll(ids) }?.let { uri to it } } ?: return false
+        if(others.any { key(it) in children }) return false
+        val deleted=runCatching { android.provider.DocumentsContract.deleteDocument(context.contentResolver,Uri.parse(folder)) }.getOrDefault(false)
+        if(deleted) { keepFolder(folder,false);synchronized(lock) { publish(jobState.value.filterNot { it.folder==folder }) } }
+        return deleted
+    }
+    private fun children(folder:Uri):Set<String>? = runCatching {
+        val provider=android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(folder,android.provider.DocumentsContract.getDocumentId(folder))
+        context.contentResolver.query(provider,arrayOf(android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID),null,null,null)?.use { c -> buildSet { while(c.moveToNext()) add("${folder.authority}|${c.getString(0)}") } }
+    }.getOrNull()
     fun clearFinished() { synchronized(lock) { publish(jobState.value.filterNot { it.state==DownloadJob.State.DONE }) } }
     fun pending()=jobState.value.any { it.state==DownloadJob.State.QUEUED }
     private fun start() { ContextCompat.startForegroundService(context,Intent(context,DownloadService::class.java)) }
@@ -199,6 +231,7 @@ class Downloads(private val context:Context,private val importer:Importer) {
         val base=DownloadPlan.folderName(job.title);var name=base;var n=1
         while(root.findFile(name)!=null) name="$base (${++n})"
         val dir=root.createDirectory(name) ?: error("Couldn't create a folder for this book. Choose the download folder again in Settings.")
+        keepFolder(dir.uri.toString(),true)
         update(id) { it.copy(folder=dir.uri.toString()) }
         return dir
     }
