@@ -94,7 +94,8 @@ class Downloads(private val context:Context,private val importer:Importer) {
      * [others] (other books' tracks) also live in the folder, as when one upload held several books.
      */
     fun deleteBookFolder(tracks:List<Uri>,others:List<Uri> = emptyList()):Boolean {
-        fun id(uri:Uri)=runCatching { android.provider.DocumentsContract.getDocumentId(uri) }.getOrNull()
+        // Document IDs only mean something within their provider, so the provider is part of the key.
+        fun id(uri:Uri)=runCatching { "${uri.authority}|${android.provider.DocumentsContract.getDocumentId(uri)}" }.getOrNull()
         val ids=tracks.map { id(it) ?: return false }
         val job=jobState.value.firstOrNull { job -> !job.active && job.folder.isNotBlank() && id(Uri.parse(job.folder))?.let { folder -> ids.all { it.startsWith("$folder/") } }==true } ?: return false
         val folder=id(Uri.parse(job.folder))

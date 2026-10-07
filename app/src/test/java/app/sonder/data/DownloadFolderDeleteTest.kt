@@ -44,6 +44,9 @@ class DownloadFolderDeleteTest {
         val docs=FakeDocuments.install(context).apply { writable+="primary:Music/Other/01.mp3" }
         val downloads=downloads(job(DownloadJob.State.DONE))
         assertFalse(downloads.deleteBookFolder(listOf(FakeDocuments.document("primary:Music/Other/01.mp3"))))
+        // The same document ID from another provider is a different file.
+        val elsewhere=android.provider.DocumentsContract.buildDocumentUri("com.example.cloud","primary:Audiobooks/Project Hail Mary/01.m4b")
+        assertFalse(downloads.deleteBookFolder(listOf(elsewhere)))
         // A folder whose name starts the same is a different folder.
         assertFalse(downloads.deleteBookFolder(listOf(FakeDocuments.document("primary:Audiobooks/Project Hail Mary 2/01.mp3"))))
         assertTrue(docs.deleted.isEmpty());assertEquals(1,downloads.jobs.value.size)
