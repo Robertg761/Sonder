@@ -90,12 +90,15 @@ class Downloads(private val context:Context,private val importer:Importer) {
     }
     /**
      * Deletes the book folder a download created when [tracks] all live in it, and forgets that download so the
-     * book can be downloaded again. Returns false when the tracks didn't come from a Sonder download.
+     * book can be downloaded again. Returns false when the tracks didn't come from a Sonder download, or when
+     * [others] (other books' tracks) also live in the folder, as when one upload held several books.
      */
-    fun deleteBookFolder(tracks:List<Uri>):Boolean {
+    fun deleteBookFolder(tracks:List<Uri>,others:List<Uri> = emptyList()):Boolean {
         fun id(uri:Uri)=runCatching { android.provider.DocumentsContract.getDocumentId(uri) }.getOrNull()
         val ids=tracks.map { id(it) ?: return false }
         val job=jobState.value.firstOrNull { job -> !job.active && job.folder.isNotBlank() && id(Uri.parse(job.folder))?.let { folder -> ids.all { it.startsWith("$folder/") } }==true } ?: return false
+        val folder=id(Uri.parse(job.folder))
+        if(others.any { other -> id(other)?.startsWith("$folder/")==true }) return false
         val deleted=runCatching { android.provider.DocumentsContract.deleteDocument(context.contentResolver,Uri.parse(job.folder)) }.getOrDefault(false)
         if(deleted) synchronized(lock) { publish(jobState.value.filterNot { it.id==job.id }) }
         return deleted

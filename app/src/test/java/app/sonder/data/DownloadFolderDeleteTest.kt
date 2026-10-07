@@ -30,6 +30,16 @@ class DownloadFolderDeleteTest {
         assertTrue(docs.writable.isEmpty())
         assertTrue("The download can be found and downloaded again",downloads.jobs.value.isEmpty())
     }
+    @Test fun keepsAFolderAnotherBookStillUses() {
+        val docs=FakeDocuments.install(context).apply { writable+=listOf("primary:Audiobooks/Project Hail Mary/Book 1.m4b","primary:Audiobooks/Project Hail Mary/Book 2.m4b") }
+        val downloads=downloads(job(DownloadJob.State.DONE))
+        // One upload imported as two books: deleting book 1 must not take book 2's audio with it.
+        assertFalse(downloads.deleteBookFolder(listOf(FakeDocuments.document("primary:Audiobooks/Project Hail Mary/Book 1.m4b")),others=listOf(FakeDocuments.document("primary:Audiobooks/Project Hail Mary/Book 2.m4b"))))
+        assertTrue(docs.deleted.isEmpty());assertEquals(1,downloads.jobs.value.size)
+        // Its files are then deleted one by one instead, leaving book 2 alone.
+        assertEquals(MediaFiles.Result(1,emptyList(),0),MediaFiles.delete(context,listOf(FakeDocuments.document("primary:Audiobooks/Project Hail Mary/Book 1.m4b"))))
+        assertEquals(setOf("primary:Audiobooks/Project Hail Mary/Book 2.m4b"),docs.writable)
+    }
     @Test fun leavesBooksThatWerentDownloadedBySonder() {
         val docs=FakeDocuments.install(context).apply { writable+="primary:Music/Other/01.mp3" }
         val downloads=downloads(job(DownloadJob.State.DONE))

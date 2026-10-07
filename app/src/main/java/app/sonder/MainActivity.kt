@@ -23,6 +23,11 @@ import app.sonder.ui.SonderRoot
 @UnstableApi
 class MainActivity : ComponentActivity() {
     override fun onStart() { super.onStart();(application as SonderApp).updater.foreground() }
+    /** Keeps read access, plus write access when the provider granted it, so Delete from phone can remove the files. */
+    private fun keepAccess(uri:android.net.Uri) {
+        runCatching { contentResolver.takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
+            .onFailure { contentResolver.takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+    }
     override fun onCreate(savedInstanceState:Bundle?) {
         super.onCreate(savedInstanceState);enableEdgeToEdge()
         setContent {
@@ -38,11 +43,11 @@ class MainActivity : ComponentActivity() {
             var scanVideo by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
             val scanPermission=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { vm.scanDevice(scanVideo) }
             val files=rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-                uris.forEach { uri -> runCatching { contentResolver.takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION) }.onFailure { vm.notice("This provider did not grant lasting access. Keep the file available and reimport it if needed.") } }
+                uris.forEach { uri -> runCatching { keepAccess(uri) }.onFailure { vm.notice("This provider did not grant lasting access. Keep the file available and reimport it if needed.") } }
                 if(uris.isNotEmpty()) vm.importFiles(uris)
             }
             val folder=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-                if(uri!=null) runCatching { contentResolver.takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION);vm.importFolder(uri) }.onFailure { vm.notice("Folder access was not granted. Choose another folder.") }
+                if(uri!=null) runCatching { keepAccess(uri);vm.importFolder(uri) }.onFailure { vm.notice("Folder access was not granted. Choose another folder.") }
             }
             val downloadFolder=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
                 if(uri!=null) runCatching { contentResolver.takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION);vm.downloads.saveFolder(uri.toString()) }.onFailure { vm.notice("Sonder needs permission to save files in that folder. Choose another folder.") }
