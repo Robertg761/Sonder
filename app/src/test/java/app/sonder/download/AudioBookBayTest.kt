@@ -81,6 +81,28 @@ class AudioBookBayTest {
     @Test fun missingHashIsAnError() {
         assertThrows(java.io.IOException::class.java) { AudioBookBay.parseDetails("<h1>Removed</h1>","https://audiobookbay.lu/abss/x/",site) }
     }
+    @Test fun normalizesSearchesTheWaySiteMatchesTitles() {
+        assertEquals("project hail mary andy weir",AudioBookBay.normalize("  Project Hail Mary - Andy Weir! "))
+        assertEquals("ender's game",AudioBookBay.normalize("Ender’s Game:"))
+        assertEquals("mistborn 1 final empire",AudioBookBay.normalize("Mistborn #1: (Final Empire)"))
+    }
+    @Test fun plansLoosenTheSearchStepByStep() {
+        val plans=AudioBookBay.plans("The Project Hail Mary by Andy Weir")
+        assertEquals(AudioBookBay.Plan("the project hail mary by andy weir"),plans[0])
+        assertEquals(AudioBookBay.Plan("project hail mary andy weir"),plans[1])
+        assertEquals(AudioBookBay.Plan("project hail mary andy weir",titles=false),plans[2])
+        assertEquals(AudioBookBay.Plan("project hail"),plans[3])
+        assertEquals(listOf("project","hail"),plans.drop(4).map { it.query })
+        assertEquals(listOf(AudioBookBay.Plan("sanderson"),AudioBookBay.Plan("sanderson",titles=false)),AudioBookBay.plans("Sanderson"))
+        assertTrue(AudioBookBay.plans(" - ").isEmpty())
+    }
+    @Test fun ranksCloseTitlesFirstAndDropsUnrelatedOnes() {
+        fun listing(title:String)=AudioBookBay.Listing(title,"https://audiobookbay.lu/abss/${title.hashCode()}/")
+        val results=listOf(listing("Entire Audiobooks Collection - Various"),listing("Dungeon Crawler Carl Books 1-8 - Matt Dinniman"),listing("Carl Sagan's Cosmos"),listing("Dungeon Crawler Carl - Matt Dinniman"))
+        val ranked=AudioBookBay.rank(results,"dungen crawler carl").map { it.title }
+        assertEquals(listOf("Dungeon Crawler Carl Books 1-8 - Matt Dinniman","Dungeon Crawler Carl - Matt Dinniman","Carl Sagan's Cosmos"),ranked)
+        assertEquals("Ender’s Game - Orson Scott Card",AudioBookBay.rank(listOf(listing("Game of Thrones"),listing("Ender’s Game - Orson Scott Card")),"enders game").first().title)
+    }
     @Test fun normalizesSiteAddresses() {
         assertEquals("https://audiobookbay.lu",AudioBookBay.site("audiobookbay.lu"))
         assertEquals("https://audiobookbay.is",AudioBookBay.site(" https://AudioBookBay.is/some/page "))
@@ -88,5 +110,6 @@ class AudioBookBayTest {
         assertThrows(IllegalArgumentException::class.java) { AudioBookBay.site("http://audiobookbay.lu") }
         assertThrows(IllegalArgumentException::class.java) { AudioBookBay.site("not a site") }
         assertEquals("https://audiobookbay.lu/page/3/?s=jane+doe&tt=1",AudioBookBay.searchUrl("https://audiobookbay.lu"," Jane Doe ",3))
+        assertEquals("https://audiobookbay.lu/?s=jane+doe",AudioBookBay.searchUrl("https://audiobookbay.lu","Jane Doe",titles=false))
     }
 }

@@ -28,7 +28,7 @@ import java.io.File
 data class DeviceScanState(val running:Boolean=false,val completed:Boolean=false,val result:DeviceScanner.Result=DeviceScanner.Result(emptyList()),val error:String="")
 data class UndoNotice(val message:String,val undo:()->Unit)
 data class Playback(val bookId:Long=0,val position:Long=0,val playing:Boolean=false,val buffering:Boolean=false,val speed:Float=1f,val error:String="")
-data class FindState(val query:String="",val loading:Boolean=false,val results:List<AudioBookBay.Listing> = emptyList(),val page:Int=0,val next:Boolean=false,val error:String="",val searched:Boolean=false)
+data class FindState(val query:String="",val loading:Boolean=false,val results:List<AudioBookBay.Listing> = emptyList(),val plan:AudioBookBay.Plan?=null,val page:Int=0,val next:Boolean=false,val error:String="",val searched:Boolean=false)
 data class FindDetails(val listing:AudioBookBay.Listing,val details:AudioBookBay.Details?=null,val error:String="")
 data class AccountState(val checking:Boolean=false,val user:RealDebrid.User?=null,val error:String="")
 @UnstableApi
@@ -215,8 +215,15 @@ class LibraryViewModel(application:Application):AndroidViewModel(application) {
         findState.value=if(more) current.copy(loading=true,error="") else FindState(query.trim(),loading=true,searched=true)
         findJob=viewModelScope.launch(errorHandler) {
             try {
-                val page=withContext(Dispatchers.IO) { AudioBookBay.search(downloads.settings.value.site,query,if(more) current.page+1 else 1) }
-                findState.value=findState.value.copy(loading=false,results=(findState.value.results+page.results).distinctBy { it.url },page=page.page,next=page.next && page.results.isNotEmpty())
+                val site=downloads.settings.value.site
+                if(more && current.plan!=null) {
+                    // More pages come from the search that first found something, ranked against what was typed.
+                    val page=withContext(Dispatchers.IO) { AudioBookBay.search(site,current.plan.query,current.page+1,current.plan.titles) }
+                    findState.value=findState.value.copy(loading=false,results=(findState.value.results+AudioBookBay.rank(page.results,query)).distinctBy { it.url },page=page.page,next=page.next && page.results.isNotEmpty())
+                } else {
+                    val found=withContext(Dispatchers.IO) { AudioBookBay.find(site,query) }
+                    findState.value=findState.value.copy(loading=false,results=found.results,plan=found.more,page=found.page,next=found.next)
+                }
             } catch(e:CancellationException) { throw e }
             catch(e:Exception) { findState.value=findState.value.copy(loading=false,error=e.message ?: "Search failed. Try again.") }
         }

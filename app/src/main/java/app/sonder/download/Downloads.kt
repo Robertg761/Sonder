@@ -159,28 +159,33 @@ class Downloads(private val context:Context,private val importer:Importer) {
 
     /** Adds the magnet if needed, chooses files, and waits until Real-Debrid has the whole upload. */
     private suspend fun cached(rd:RealDebrid,id:String,status:(String,Float,Long,Long)->Any?):RealDebrid.Torrent {
-        var progress=-1;var changed=SystemClock.elapsedRealtime()
+        // A torrent that sits in one state with no progress for too long is stuck, whatever the state is.
+        var seen="";var changed=SystemClock.elapsedRealtime();var selected=0L
         while(true) {
             currentCoroutineContext().ensureActive()
             var job=find(id)
             if(job.torrent.isBlank()) { status("Sending to Real-Debrid",-1f,0,0);val torrent=withContext(Dispatchers.IO) { rd.addMagnet(job.magnet) };job=update(id) { it.copy(torrent=torrent) } ?: run { runCatching { rd.delete(torrent) };throw CancellationException("Download removed") } }
             val t=try { withContext(Dispatchers.IO) { rd.torrent(job.torrent) } }
-                catch(e:RealDebrid.Error) { if(e.status==404) { update(id) { it.copy(torrent="") };continue } else throw e }
+                catch(e:RealDebrid.Error) { if(e.status==404) { update(id) { it.copy(torrent="") };seen="";changed=SystemClock.elapsedRealtime();selected=0L;continue } else throw e }
+            val now=SystemClock.elapsedRealtime()
+            if("${t.status}:${t.progress}"!=seen) { seen="${t.status}:${t.progress}";changed=now }
+            val waited=(now-changed)/60000
             when {
                 t.status=="downloaded" -> return t
                 t.status in RealDebrid.failed -> error(RealDebrid.describe(t.status))
                 t.status=="waiting_files_selection" -> {
                     val wanted=DownloadPlan.wanted(t.files)
                     check(wanted.isNotEmpty()) { if(t.files.any { DownloadPlan.extension(it.path) in DownloadPlan.archives }) "This upload is packed in an archive, which Sonder can't open." else "This upload has no audio files Sonder can play." }
-                    withContext(Dispatchers.IO) { rd.select(t.id,wanted.map { it.id }) }
-                    status("Real-Debrid is preparing the files",-1f,0,0)
+                    check(now-changed<5*60*1000L) { "Real-Debrid didn't start this torrent after Sonder chose its ${wanted.size} files. Remove the download and try again, or try another upload." }
+                    // Some uploads stay waiting after a partial selection, so after 45 seconds every file is selected.
+                    // Only the wanted files are still downloaded to the phone; the rest stay on Real-Debrid.
+                    if(selected==0L || now-selected>45_000) { withContext(Dispatchers.IO) { rd.select(t.id,if(selected==0L) wanted.map { it.id } else null) };selected=now }
+                    status("Asking Real-Debrid to fetch ${wanted.size} ${if(wanted.size==1) "file" else "files"}"+if(waited>0) " · $waited min" else "",-1f,0,0)
                 }
                 else -> {
-                    val now=SystemClock.elapsedRealtime()
-                    if(t.progress!=progress) { progress=t.progress;changed=now }
-                    else check(now-changed<60*60*1000L) { "Real-Debrid hasn't made progress in an hour. The upload may have no seeders. Try again later." }
+                    check(now-changed<60*60*1000L) { "Real-Debrid hasn't made progress in an hour (${t.status.replace('_',' ')}). The upload may have no seeders. Try again later." }
                     val seeders=if(t.status=="downloading") " · ${t.seeders} ${if(t.seeders==1) "seeder" else "seeders"}" else ""
-                    status(RealDebrid.describe(t.status)+seeders,if(t.status=="downloading") t.progress/100f else -1f,0,0)
+                    status(RealDebrid.describe(t.status)+seeders+if(waited>0 && t.status!="downloading") " · $waited min" else "",if(t.status=="downloading") t.progress/100f else -1f,0,0)
                 }
             }
             delay(if(t.status=="downloading") 5000 else 2500)

@@ -1,9 +1,8 @@
-Sonder 1.7 can find audiobooks on AudioBookBay and download them into your library through Real-Debrid.
+Sonder 1.7.1 makes AudioBookBay search more forgiving and gives it its own tab.
 
-- Set it up in Settings → AudioBookBay downloads: paste your Real-Debrid API token and choose a download folder. Torrents need a Real-Debrid premium account.
-- Tap + → Find on AudioBookBay, search for a title or author, and tap Download to library. The book is imported with its chapters and cover when the download finishes.
-- Downloads continue in the background with a progress notification. Retry resumes an interrupted download.
-- Only audio, chapter sheets, and a cover image are downloaded. Programs and other files are skipped, and uploads that contain programs show a warning.
-- If AudioBookBay moves to a new address, change it in Settings.
+- Find is now a tab next to Library once AudioBookBay downloads are set up.
+- Searches no longer need the exact title. Capitals, dashes, extra words like "the" or "by", the author's name in any order, and a typo in one word still find the book, with the closest titles listed first.
+- Fixed downloads that could wait forever on "Real-Debrid is preparing the files". If Real-Debrid doesn't start an upload, Sonder asks for all of its files instead (only audio, chapter sheets, and the cover download to your phone), and a download that stays stuck now stops with an explanation so you can retry.
+- Waiting downloads show how long they've been waiting.
 
 Install over your existing Sonder app to keep your library and listening progress.

@@ -49,9 +49,11 @@ import kotlinx.coroutines.launch
     var selected by rememberSaveable { mutableLongStateOf(0) }
     var player by rememberSaveable { mutableStateOf(false) }
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
-    var findOpen by rememberSaveable { mutableStateOf(false) }
     val findDetail by vm.findDetails.collectAsStateWithLifecycle()
     val downloads by vm.downloads.settings.collectAsStateWithLifecycle()
+    // The Find tab exists only once downloads are set up; a saved Find tab falls back to the library.
+    val shownTab=if(tab==FIND_TAB && !downloads.ready) 0 else tab
+    val findTab=shownTab==FIND_TAB
     var importOpen by rememberSaveable { mutableStateOf(false) }
     var optionsBook by rememberSaveable { mutableLongStateOf(0) }
     var scanOpen by rememberSaveable { mutableStateOf(false) }
@@ -66,7 +68,7 @@ import kotlinx.coroutines.launch
     LaunchedEffect(notice) { if(notice.isNotEmpty()) { snackbar.showSnackbar(notice);vm.clearNotice() } }
     LaunchedEffect(undo) { undo?.let { u -> try { if(snackbar.showSnackbar(u.message,actionLabel="Undo",withDismissAction=true,duration=SnackbarDuration.Long)==SnackbarResult.ActionPerformed) u.undo() } finally { vm.clearUndo(u) } } }
     LaunchedEffect(import.running,import.current,import.errors) { if(!import.running && import.current.isNotBlank()) { vm.notice(import.current+if(import.errors.isNotEmpty()) " · ${import.errors.size} files need attention" else "") } else if(!import.running && import.errors.isNotEmpty()) vm.notice(import.errors.first()) }
-    BackHandler(player || findOpen || settingsOpen || selected>0 || collectionFilter.isNotBlank()) { when { player -> player=false;findOpen && findDetail!=null -> vm.closeListing();findOpen -> findOpen=false;settingsOpen -> settingsOpen=false;selected>0 -> selected=0;else -> collectionFilter="" } }
+    BackHandler(player || settingsOpen || selected>0 || collectionFilter.isNotBlank() || findTab && findDetail!=null) { when { player -> player=false;settingsOpen -> settingsOpen=false;selected>0 -> selected=0;findTab && findDetail!=null -> vm.closeListing();else -> collectionFilter="" } }
     SonderTheme(settings.theme) {
         Surface(Modifier.fillMaxSize()) {
             // The player has its own Scaffold, so it needs its own host for notices and Undo.
@@ -76,25 +78,27 @@ import kotlinx.coroutines.launch
                 snackbarHost={ SnackbarHost(snackbar) },
                 topBar={
                     // Tabs have no app bar; each page's title row carries its own actions.
-                    if(findOpen) TopAppBar(title={ Text(if(findDetail!=null) "Audiobook details" else "Find audiobooks",style=MaterialTheme.typography.titleLarge) },navigationIcon={ IconAction(Icons.AutoMirrored.Rounded.ArrowBack,"Back",{ if(findDetail!=null) vm.closeListing() else findOpen=false }) },colors=TopAppBarDefaults.topAppBarColors(containerColor=MaterialTheme.colorScheme.background))
-                    else if(settingsOpen || detail!=null) TopAppBar(title={ Text(if(settingsOpen) "Settings" else "Book details",style=MaterialTheme.typography.titleLarge) },navigationIcon={ IconAction(Icons.AutoMirrored.Rounded.ArrowBack,"Back",{ settingsOpen=false;selected=0 }) },actions={ if(!settingsOpen && detail!=null) IconAction(Icons.Rounded.MoreVert,"Book options",{ optionsBook=detail.id }) },colors=TopAppBarDefaults.topAppBarColors(containerColor=MaterialTheme.colorScheme.background))
+                    if(settingsOpen || detail!=null) TopAppBar(title={ Text(if(settingsOpen) "Settings" else "Book details",style=MaterialTheme.typography.titleLarge) },navigationIcon={ IconAction(Icons.AutoMirrored.Rounded.ArrowBack,"Back",{ settingsOpen=false;selected=0 }) },actions={ if(!settingsOpen && detail!=null) IconAction(Icons.Rounded.MoreVert,"Book options",{ optionsBook=detail.id }) },colors=TopAppBarDefaults.topAppBarColors(containerColor=MaterialTheme.colorScheme.background))
+                    else if(findTab && findDetail!=null) TopAppBar(title={ Text("Audiobook details",style=MaterialTheme.typography.titleLarge) },navigationIcon={ IconAction(Icons.AutoMirrored.Rounded.ArrowBack,"Back",vm::closeListing) },colors=TopAppBarDefaults.topAppBarColors(containerColor=MaterialTheme.colorScheme.background))
                 },
                 bottomBar={ Column {
                     if(current!=null) MiniPlayer(current,playback,{ player=true },vm::toggle,{ optionsBook=current.id })
-                    if(!findOpen && !settingsOpen && detail==null) NavigationBar(containerColor=MaterialTheme.colorScheme.surfaceContainerLow,tonalElevation=0.dp) {
-                        val labels=listOf("Library","Collections","Bookmarks","History","Insights")
-                        val icons=listOf(Icons.Rounded.LibraryBooks,Icons.Rounded.FolderOpen,Icons.Rounded.Bookmarks,Icons.Rounded.HistoryEdu,Icons.Rounded.BarChart)
-                        labels.forEachIndexed { i,label -> NavigationBarItem(selected=tab==i,onClick={ tab=i;collectionFilter="" },icon={ Icon(icons[i],null) },label={ Text(label,maxLines=1,overflow=TextOverflow.Ellipsis,style=MaterialTheme.typography.labelMedium) },colors=NavigationBarItemDefaults.colors(indicatorColor=MaterialTheme.colorScheme.primaryContainer,selectedIconColor=MaterialTheme.colorScheme.onPrimaryContainer,selectedTextColor=MaterialTheme.colorScheme.onSurface,unselectedIconColor=MaterialTheme.colorScheme.onSurfaceVariant,unselectedTextColor=MaterialTheme.colorScheme.onSurfaceVariant)) }
+                    if(!settingsOpen && detail==null) NavigationBar(containerColor=MaterialTheme.colorScheme.surfaceContainerLow,tonalElevation=0.dp) {
+                        val labels=listOf("Library","Collections","Bookmarks","History","Insights","Find")
+                        val icons=listOf(Icons.Rounded.LibraryBooks,Icons.Rounded.FolderOpen,Icons.Rounded.Bookmarks,Icons.Rounded.HistoryEdu,Icons.Rounded.BarChart,Icons.Rounded.TravelExplore)
+                        // Tab numbers stay fixed so saved state and code that opens a tab keep working; Find sits second.
+                        val order=if(downloads.ready) listOf(0,FIND_TAB,1,2,3,4) else listOf(0,1,2,3,4)
+                        order.forEach { i -> val label=labels[i];NavigationBarItem(selected=shownTab==i,onClick={ tab=i;collectionFilter="" },icon={ Icon(icons[i],null) },label={ Text(label,maxLines=1,overflow=TextOverflow.Ellipsis,style=MaterialTheme.typography.labelMedium) },colors=NavigationBarItemDefaults.colors(indicatorColor=MaterialTheme.colorScheme.primaryContainer,selectedIconColor=MaterialTheme.colorScheme.onPrimaryContainer,selectedTextColor=MaterialTheme.colorScheme.onSurface,unselectedIconColor=MaterialTheme.colorScheme.onSurfaceVariant,unselectedTextColor=MaterialTheme.colorScheme.onSurfaceVariant)) }
                     }
                 } }
             ) { padding ->
                 Box(Modifier.padding(padding).fillMaxSize(),contentAlignment=Alignment.TopCenter) {
                     Box(Modifier.widthIn(max=900.dp).fillMaxSize()) {
                         CompositionLocalProvider(LocalHeaderActions provides { IconAction(Icons.Rounded.Tune,"Settings",{ settingsOpen=true },tint=MaterialTheme.colorScheme.onSurfaceVariant) }) { when {
-                            findOpen -> FindScreen(vm,onNotification)
-                            settingsOpen -> SettingsScreen(settings,vm,library,onFiles,onFolder,onExport,onRestore,onScan={ scanOpen=true },onUpdate={ updateOpen=true },onDownloadFolder=onDownloadFolder,onFind={ findOpen=true })
+                            settingsOpen -> SettingsScreen(settings,vm,library,onFiles,onFolder,onExport,onRestore,onScan={ scanOpen=true },onUpdate={ updateOpen=true },onDownloadFolder=onDownloadFolder,onFind={ settingsOpen=false;tab=FIND_TAB })
                             detail!=null -> BookDetails(detail,vm,library,onPlay={ vm.play(detail);onNotification();player=true },onRemoved={ selected=0 },onCover={ onCover(detail) },onOptions={ optionsBook=detail.id })
-                            tab==0 || collectionFilter.isNotEmpty() -> LibraryScreen(library.books,settings.grid,collectionFilter,onClearCollection={ collectionFilter="" },onGrid={ vm.preferences.update(settings.copy(grid=!settings.grid)) },onBook={ selected=it.id },onPlay={ vm.play(it);onNotification();player=true },onImport={ importOpen=true },onOptions={ optionsBook=it.id })
+                            findTab -> FindScreen(vm,onNotification)
+                            shownTab==0 || collectionFilter.isNotEmpty() -> LibraryScreen(library.books,settings.grid,collectionFilter,onClearCollection={ collectionFilter="" },onGrid={ vm.preferences.update(settings.copy(grid=!settings.grid)) },onBook={ selected=it.id },onPlay={ vm.play(it);onNotification();player=true },onImport={ importOpen=true },onOptions={ optionsBook=it.id })
                             tab==1 -> CollectionsScreen(library.books,onCollection={ collectionFilter=it },onEdit=vm::edit)
                             tab==2 -> BookmarkScreen(library,onOpen={ b,pos -> vm.play(b,pos);onNotification();player=true },onDelete=vm::deleteBookmark,onEdit=vm::editBookmark,onOptions={ optionsBook=it.id })
                             tab==3 -> ReadingHistoryScreen(library.readingHistory,onAdd={ historyDraft=ReadingEntry() },onEdit={ historyDraft=it },onDelete=vm::deleteReading)
@@ -126,7 +130,7 @@ import kotlinx.coroutines.launch
                     Spacer(Modifier.height(12.dp));OutlinedButton(onClick={ importOpen=false;onFolder() },modifier=Modifier.fillMaxWidth().heightIn(min=54.dp),shape=MaterialTheme.shapes.medium) { Icon(Icons.Rounded.FolderOpen,null);Spacer(Modifier.width(10.dp));Text("Choose a folder") }
                     Spacer(Modifier.height(12.dp));OutlinedButton(onClick={ importOpen=false;scanOpen=true },modifier=Modifier.fillMaxWidth().heightIn(min=54.dp),shape=MaterialTheme.shapes.medium) { Icon(Icons.Rounded.Search,null);Spacer(Modifier.width(10.dp));Text("Scan device for audiobooks") }
                     // Shown once Real-Debrid and a download folder are set up in Settings.
-                    if(downloads.ready) { Spacer(Modifier.height(12.dp));OutlinedButton(onClick={ importOpen=false;findOpen=true;settingsOpen=false;selected=0 },modifier=Modifier.fillMaxWidth().heightIn(min=54.dp),shape=MaterialTheme.shapes.medium) { Icon(Icons.Rounded.TravelExplore,null);Spacer(Modifier.width(10.dp));Text("Find on AudioBookBay") } }
+                    if(downloads.ready) { Spacer(Modifier.height(12.dp));OutlinedButton(onClick={ importOpen=false;tab=FIND_TAB;settingsOpen=false;selected=0;collectionFilter="" },modifier=Modifier.fillMaxWidth().heightIn(min=54.dp),shape=MaterialTheme.shapes.medium) { Icon(Icons.Rounded.TravelExplore,null);Spacer(Modifier.width(10.dp));Text("Find on AudioBookBay") } }
                     Spacer(Modifier.height(20.dp));Text("MP4 · M4B · MP3 · M4A · AAC · FLAC · OGG · OPUS · WAV",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant);Spacer(Modifier.height(8.dp));Text("Files stay in their original location. Keep access to the folder. Protected Audible files are not supported.",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
                     if(import.errors.isNotEmpty()) { Spacer(Modifier.height(16.dp));Text("Last import",style=MaterialTheme.typography.titleSmall);import.errors.take(5).forEach { Text(it,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.error) } }
                 }
@@ -135,6 +139,7 @@ import kotlinx.coroutines.launch
     }
 }
 
+private const val FIND_TAB=5
 @Composable private fun LibraryScreen(books:List<Book>,grid:Boolean,collection:String,onClearCollection:()->Unit,onGrid:()->Unit,onBook:(Book)->Unit,onPlay:(Book)->Unit,onImport:()->Unit,onOptions:(Book)->Unit) {
     var query by rememberSaveable { mutableStateOf("") };var filter by rememberSaveable { mutableStateOf("All books") };var sort by rememberSaveable { mutableStateOf("Recently added") };var sortOpen by remember { mutableStateOf(false) }
     val filtered=books.filter { (collection.isEmpty() || if(collection=="Favorites") it.favorite else it.collection==collection) && (query.isBlank() || listOf(it.title,it.author,it.narrator,it.genre,it.collection).any { v -> v.contains(query,true) }) && when(filter) { "In progress" -> it.inProgress;"Unstarted" -> !it.inProgress && !it.finished;"Finished" -> it.finished;else -> true } }.let { list -> when(sort) { "Title" -> list.sortedBy { it.title.lowercase() };"Author" -> list.sortedBy { it.author.lowercase() };"Duration" -> list.sortedBy { it.duration };"Last listened" -> list.sortedByDescending { it.lastPlayed };else -> list.sortedByDescending { it.added } } }
