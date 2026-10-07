@@ -88,6 +88,18 @@ class Downloads(private val context:Context,private val importer:Importer) {
             if(job.first.state!=DownloadJob.State.DONE && job.first.torrent.isNotBlank() && token.isNotBlank()) runCatching { RealDebrid(token).delete(job.first.torrent) }.onFailure { android.util.Log.w("Sonder","Could not delete Real-Debrid torrent",it) }
         }
     }
+    /**
+     * Deletes the book folder a download created when [tracks] all live in it, and forgets that download so the
+     * book can be downloaded again. Returns false when the tracks didn't come from a Sonder download.
+     */
+    fun deleteBookFolder(tracks:List<Uri>):Boolean {
+        fun id(uri:Uri)=runCatching { android.provider.DocumentsContract.getDocumentId(uri) }.getOrNull()
+        val ids=tracks.map { id(it) ?: return false }
+        val job=jobState.value.firstOrNull { job -> !job.active && job.folder.isNotBlank() && id(Uri.parse(job.folder))?.let { folder -> ids.all { it.startsWith("$folder/") } }==true } ?: return false
+        val deleted=runCatching { android.provider.DocumentsContract.deleteDocument(context.contentResolver,Uri.parse(job.folder)) }.getOrDefault(false)
+        if(deleted) synchronized(lock) { publish(jobState.value.filterNot { it.id==job.id }) }
+        return deleted
+    }
     fun clearFinished() { synchronized(lock) { publish(jobState.value.filterNot { it.state==DownloadJob.State.DONE }) } }
     fun pending()=jobState.value.any { it.state==DownloadJob.State.QUEUED }
     private fun start() { ContextCompat.startForegroundService(context,Intent(context,DownloadService::class.java)) }

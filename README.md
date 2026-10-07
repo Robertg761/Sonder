@@ -14,7 +14,7 @@ Install over your existing Sonder app to keep its library.
 
 ## Install and listen
 
-Open the supplied `Sonder-1.7.1.apk` on your Android phone. Install it over the existing app without uninstalling it to preserve your library, progress, bookmarks, and granted folder access. Android may ask you to allow installation from the app that opened the file. Open Sonder, tap **+**, and choose files or a folder through the system picker.
+Open the supplied `Sonder-1.7.2.apk` on your Android phone. Install it over the existing app without uninstalling it to preserve your library, progress, bookmarks, and granted folder access. Android may ask you to allow installation from the app that opened the file. Open Sonder, tap **+**, and choose files or a folder through the system picker.
 
 Folders are scanned recursively. Matching album and author tags group tracks into books across file and folder selections. Untagged M4B/MP4 files and files with multiple embedded chapters remain separate books. Other untagged tracks in the same folder are grouped using the folder name. Tracks use natural filename order. The original media files stay where you selected them, so keep that folder, SD card, or document provider available. Cloud document providers must make the files available locally for offline playback. If a provider refuses persistent read permission, Sonder warns you; selecting the file again may be required after restarting.
 
@@ -69,6 +69,8 @@ Hold a book in Continue Listening, the library grid/list, a collection's book li
 - **Not started** resets the position to zero and removes the book from Continue Listening. Bookmarks and listening history remain saved. A reset confirmation appears when there is progress to clear.
 - **In progress** keeps the current position and adds the book to the in-progress filter and Continue Listening, including a book at the beginning.
 - **Finished** removes the book from Continue Listening and places it in Finished. It retains the saved position and bookmarks.
+
+**Delete from phone** removes the book from the library and permanently deletes its audio from your phone, along with its progress and bookmarks; reading history entries stay. A book Sonder downloaded is deleted as its whole folder, cover and chapter sheet included. Files you added with the picker or the device scan belong to shared storage, so Android asks you to confirm the deletion (Android 11 and later). If Android doesn't allow it, Sonder keeps the book and tells you to delete the files with your file manager.
 
 Changing the status of the active book pauses playback and clears its queue. Old background saves cannot overwrite the new status. Starting a book again puts it back in progress.
 
