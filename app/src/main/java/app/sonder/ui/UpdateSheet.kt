@@ -10,9 +10,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.sonder.update.AppUpdater
+import app.sonder.update.ReleaseInfo
+import app.sonder.update.UpdateState
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable fun UpdateSheet(updater:AppUpdater,onDismiss:()->Unit) {
     val state by updater.state.collectAsStateWithLifecycle()
     val context=LocalContext.current
@@ -20,6 +21,12 @@ import kotlinx.coroutines.launch
     var launching by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     val info=state.available ?: return
+    UpdateSheetContent(info,state,launching,error,onDownload=updater::download,onCancel=updater::cancel,
+        onInstall={ launching=true;error="";scope.launch { try { context.startActivity(updater.installIntent()) } catch(e:Exception) { error=e.message ?: "Android couldn't open the installer." } finally { launching=false } } },onDismiss=onDismiss)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable internal fun UpdateSheetContent(info:ReleaseInfo,state:UpdateState,launching:Boolean,error:String,onDownload:()->Unit,onCancel:()->Unit,onInstall:()->Unit,onDismiss:()->Unit) {
     // Opens fully expanded with the actions pinned below the notes, so long release notes never hide the buttons.
     ModalBottomSheet(onDismissRequest=onDismiss,containerColor=MaterialTheme.colorScheme.background,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)) {
         Column(Modifier.fillMaxWidth().padding(horizontal=24.dp).padding(bottom=24.dp)) {
@@ -35,11 +42,11 @@ import kotlinx.coroutines.launch
                 if(state.phase=="downloading" || state.phase=="verifying") {
                     LinearProgressIndicator(progress={ state.progress },modifier=Modifier.fillMaxWidth())
                     Text(if(state.phase=="verifying") "Verifying the update…" else "Downloading… ${(state.progress*100).toInt()}%")
-                    TextButton({ updater.cancel() }) { Text("Cancel download") }
+                    TextButton(onCancel) { Text("Cancel download") }
                 } else if(state.phase=="ready") {
                     Text("Ready to install. If Android asks, allow installs from Sonder, return here, then tap Install update again.",style=MaterialTheme.typography.bodyMedium)
-                    Button(onClick={ launching=true;error="";scope.launch { try { context.startActivity(updater.installIntent()) } catch(e:Exception) { error=e.message ?: "Android couldn't open the installer." } finally { launching=false } } },enabled=!launching,modifier=Modifier.fillMaxWidth().heightIn(min=52.dp)) { Text(if(launching) "Opening installer…" else "Install update") }
-                } else Button(onClick=updater::download,modifier=Modifier.fillMaxWidth().heightIn(min=52.dp)) { Text(if(state.phase=="error") "Retry download" else "Download update") }
+                    Button(onClick=onInstall,enabled=!launching,modifier=Modifier.fillMaxWidth().heightIn(min=52.dp)) { Text(if(launching) "Opening installer…" else "Install update") }
+                } else Button(onClick=onDownload,modifier=Modifier.fillMaxWidth().heightIn(min=52.dp)) { Text(if(state.phase=="error") "Retry download" else "Download update") }
                 if(state.message.isNotBlank()) Text(state.message,color=MaterialTheme.colorScheme.error)
                 if(error.isNotBlank()) Text(error,color=MaterialTheme.colorScheme.error)
                 TextButton(onDismiss,modifier=Modifier.fillMaxWidth()) { Text("Later") }

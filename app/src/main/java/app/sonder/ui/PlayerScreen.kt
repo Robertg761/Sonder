@@ -97,7 +97,7 @@ import app.sonder.data.*
     // A bookmark saved without a note is named after its chapter rather than a generic "Bookmark".
     val bookmarkChapter=chapters.lastOrNull { it.start<=bookmarkPosition }?.title.orEmpty()
     if(bookmarkOpen) AlertDialog(onDismissRequest={ bookmarkOpen=false },title={ Text("Bookmark at ${clock(bookmarkPosition)}") },text={ OutlinedTextField(note,{ note=it },label={ Text("Add a note") },placeholder={ if(bookmarkChapter.isNotBlank()) Text(bookmarkChapter) },supportingText={ if(note.isBlank() && bookmarkChapter.isNotBlank()) Text("Leave blank to name it after the chapter") },minLines=3,modifier=Modifier.fillMaxWidth()) },confirmButton={ TextButton({ vm.bookmark(note.ifBlank { bookmarkChapter },bookmarkPosition,book.id);note="";bookmarkOpen=false;tab=1 }) { Text("Save bookmark") } },dismissButton={ TextButton({ bookmarkOpen=false }) { Text("Cancel") } })
-    if(speedOpen) ModalBottomSheet(onDismissRequest={ speedOpen=false },containerColor=MaterialTheme.colorScheme.background) {
+    if(speedOpen) ModalBottomSheet(onDismissRequest={ speedOpen=false },containerColor=MaterialTheme.colorScheme.background,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)) {
         Column(Modifier.padding(horizontal=24.dp).padding(bottom=32.dp)) {
             Text("At your own pace",style=MaterialTheme.typography.headlineMedium);Spacer(Modifier.height(8.dp));Text("${playback.speed}× · ${duration(((book.duration-playback.position)/playback.speed).toLong())} remaining",color=MaterialTheme.colorScheme.onSurfaceVariant)
             Slider(playback.speed,{ vm.speed((it*20).toInt()/20f) },valueRange=.5f..3f)
@@ -105,7 +105,7 @@ import app.sonder.data.*
             Row(Modifier.fillMaxWidth().padding(top=16.dp),verticalAlignment=Alignment.CenterVertically) { Text("Preserve voice pitch",modifier=Modifier.weight(1f));Switch(settings.preservePitch,{ vm.preferences.update(settings.copy(preservePitch=it)) }) }
         }
     }
-    if(timerOpen) ModalBottomSheet(onDismissRequest={ timerOpen=false },containerColor=MaterialTheme.colorScheme.background) {
+    if(timerOpen) ModalBottomSheet(onDismissRequest={ timerOpen=false },containerColor=MaterialTheme.colorScheme.background,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)) {
         Column(Modifier.padding(horizontal=24.dp).padding(bottom=32.dp)) {
             Text("Drift off to a story",style=MaterialTheme.typography.headlineMedium);Text("Playback pauses when the timer ends.",color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.padding(top=8.dp,bottom=20.dp))
             listOf(15,30,45,60,90).forEach { minutes -> TimerOption("$minutes minutes",{ vm.timer(minutes);timerOpen=false }) }

@@ -16,7 +16,8 @@ import app.sonder.data.ListeningStatus
 @Composable fun BookOptionsSheet(book:Book,onDismiss:()->Unit,onStatus:(ListeningStatus)->Unit,onFavorite:()->Unit,onDetails:()->Unit,onLog:()->Unit,onDelete:()->Unit) {
     var resetConfirm by remember(book.id) { mutableStateOf(false) }
     var deleteConfirm by remember(book.id) { mutableStateOf(false) }
-    ModalBottomSheet(onDismissRequest=onDismiss,containerColor=MaterialTheme.colorScheme.background) {
+    // Fully expanded, so every option (Delete from phone is last) is visible without dragging the sheet up.
+    ModalBottomSheet(onDismissRequest=onDismiss,containerColor=MaterialTheme.colorScheme.background,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)) {
         LazyColumn(contentPadding=PaddingValues(start=24.dp,end=24.dp,bottom=30.dp)) {
             item { Text(book.title,style=MaterialTheme.typography.headlineSmall);Text(book.author,color=MaterialTheme.colorScheme.onSurfaceVariant);Spacer(Modifier.height(20.dp));Text("Listening status",style=MaterialTheme.typography.titleSmall) }
             ListeningStatus.entries.forEach { status -> item {

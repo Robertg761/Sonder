@@ -123,7 +123,7 @@ import kotlinx.coroutines.launch
             )
             historyDraft?.let { draft -> ReadingEntryEditor(draft,library.books,historySaving,onDismiss={ if(historyPromptId.isNotBlank()) vm.dismissCompletion(historyPromptId);historyDraft=null;historyPromptId="" },onSave={ entry -> vm.saveReading(entry,historyPromptId.ifBlank { null }) { historyDraft=null;historyPromptId="";player=false;settingsOpen=false;selected=0;collectionFilter="";tab=3 } }) }
             if(scanOpen) DeviceScanSheet(vm,onDismiss={ scanOpen=false;vm.cancelScan() },onScan=onScan,onImport={ vm.importDiscovered(it);scanOpen=false })
-            if(importOpen) ModalBottomSheet(onDismissRequest={ importOpen=false },containerColor=MaterialTheme.colorScheme.background) {
+            if(importOpen) ModalBottomSheet(onDismissRequest={ importOpen=false },containerColor=MaterialTheme.colorScheme.background,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)) {
                 Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal=24.dp).padding(bottom=30.dp)) {
                     Text("Add your next listen",style=MaterialTheme.typography.headlineMedium);Spacer(Modifier.height(12.dp));Text("Choose files or a folder. Sonder reads cover art, titles, authors, and embedded chapters.",style=MaterialTheme.typography.bodyLarge,color=MaterialTheme.colorScheme.onSurfaceVariant);Spacer(Modifier.height(24.dp))
                     Button(onClick={ importOpen=false;onFiles() },modifier=Modifier.fillMaxWidth().heightIn(min=54.dp),shape=MaterialTheme.shapes.medium) { Icon(Icons.Rounded.AudioFile,null);Spacer(Modifier.width(10.dp));Text("Choose audio files") }

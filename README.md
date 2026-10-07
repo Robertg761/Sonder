@@ -137,7 +137,7 @@ The supplied release uses GitHub updates and is intended for sideloading. Google
 - `download/`: AudioBookBay page parsing, the Real-Debrid API client, file selection and naming, and the saved download queue run by a data-sync foreground service.
 - `ui/LibraryViewModel.kt`: asynchronous player connection and user actions.
 - `ui/`: the library, player, details, collections, bookmarks, reading history, settings, and insights screens.
-- `src/test`: parser and malformed-data unit tests, including real QuickTime, FLAC, Vorbis, and Opus chapter fixtures.
+- `src/test`: parser and malformed-data unit tests, including real QuickTime, FLAC, Vorbis, and Opus chapter fixtures, plus Robolectric tests that render sheets on a small phone screen (screenshots in `app/build/screenshots`) and check file deletion against fake storage providers.
 - `src/androidTest`: actual Android import, persistence, rescan, backup, playback, media-notification, background, and sleep-timer tests.
 - `src/debug`: FileProvider and DocumentsProvider fixtures used only for Android device tests.
 
