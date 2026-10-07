@@ -166,7 +166,7 @@ class Downloads(private val context:Context,private val importer:Importer) {
             var job=find(id)
             if(job.torrent.isBlank()) { status("Sending to Real-Debrid",-1f,0,0);val torrent=withContext(Dispatchers.IO) { rd.addMagnet(job.magnet) };job=update(id) { it.copy(torrent=torrent) } ?: run { runCatching { rd.delete(torrent) };throw CancellationException("Download removed") } }
             val t=try { withContext(Dispatchers.IO) { rd.torrent(job.torrent) } }
-                catch(e:RealDebrid.Error) { if(e.status==404) { update(id) { it.copy(torrent="") };continue } else throw e }
+                catch(e:RealDebrid.Error) { if(e.status==404) { update(id) { it.copy(torrent="") };seen="";changed=SystemClock.elapsedRealtime();selected=0L;continue } else throw e }
             val now=SystemClock.elapsedRealtime()
             if("${t.status}:${t.progress}"!=seen) { seen="${t.status}:${t.progress}";changed=now }
             val waited=(now-changed)/60000

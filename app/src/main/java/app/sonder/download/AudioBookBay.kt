@@ -57,14 +57,14 @@ object AudioBookBay {
     }
     /** Runs [plans] until there are enough results, then orders them by how well each title matches the search. */
     fun find(site:String,input:String,enough:Int=8):Found {
-        val found=LinkedHashMap<String,Listing>();var more:Plan?=null;var page=1;var next=false;var failure:Exception?=null
+        val found=LinkedHashMap<String,Listing>();var more:Plan?=null;var page=1;var next=false
         for(plan in plans(input)) {
-            val result=try { search(site,plan.query,1,plan.titles) } catch(e:java.io.IOException) { if(found.isEmpty()) failure=e;continue }
+            // A failed request says nothing about looser searches, and each would wait out its own timeout.
+            val result=try { search(site,plan.query,1,plan.titles) } catch(e:java.io.IOException) { if(found.isEmpty()) throw e else break }
             result.results.forEach { found.putIfAbsent(it.url,it) }
             if(more==null && result.results.isNotEmpty()) { more=plan;page=result.page;next=result.next }
             if(found.size>=enough) break
         }
-        if(found.isEmpty() && failure!=null) throw failure
         return Found(rank(found.values.toList(),input),more,page,next)
     }
     /** Best matches first; results that share no word with the search are dropped when anything matches. */
