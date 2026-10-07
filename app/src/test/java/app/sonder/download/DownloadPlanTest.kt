@@ -27,6 +27,11 @@ class DownloadPlanTest {
         val files=listOf(file(1,"/Book/CD1/01.mp3"),file(2,"/Book/CD1/02.mp3"),file(3,"/Book/CD2/01.mp3"),file(4,"/Book/Art/front.jpeg"))
         assertEquals(mapOf(1 to "CD1 - 01.mp3",2 to "CD1 - 02.mp3",3 to "CD2 - 01.mp3",4 to "cover.jpg"),DownloadPlan.names(files))
     }
+    @Test fun coverInAnotherFolderDoesNotRenameTracks() {
+        val files=listOf(file(1,"/Book/Audio/01.mp3"),file(2,"/Book/Audio/book.cue"),file(3,"/Book/cover.jpg"))
+        assertEquals(listOf(1,2,3),DownloadPlan.wanted(files).map { it.id })
+        assertEquals(mapOf(1 to "01.mp3",2 to "book.cue",3 to "cover.jpg"),DownloadPlan.names(files))
+    }
     @Test fun singleFolderKeepsFileNames() {
         assertEquals(mapOf(1 to "Book.m4b"),DownloadPlan.names(listOf(file(1,"/Some Book/Book.m4b"))))
         assertEquals(mapOf(1 to "Book.m4b"),DownloadPlan.names(listOf(file(1,"/Book.m4b"))))

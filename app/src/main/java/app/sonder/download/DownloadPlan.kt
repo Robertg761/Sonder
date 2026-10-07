@@ -37,8 +37,10 @@ object DownloadPlan {
     fun names(files:List<RealDebrid.File>):Map<Int,String> {
         val cover=cover(files)
         val parts=files.associate { f -> f.id to f.path.split('/').filter { it.isNotBlank() } }
+        // The cover is renamed anyway, so only audio and cue paths decide which folders are shared.
+        val shaped=files.filter { it!=cover }.ifEmpty { files }.map { parts.getValue(it.id) }
         var common=0
-        while(parts.values.all { it.size>common+1 } && parts.values.map { it[common] }.distinct().size==1) common++
+        while(shaped.all { it.size>common+1 } && shaped.map { it[common] }.distinct().size==1) common++
         val used=mutableSetOf<String>()
         return files.sortedBy { it.id }.associate { f ->
             val name=if(f==cover) "cover.${extension(f.path).replace("jpeg","jpg")}" else sanitize(parts.getValue(f.id).drop(common).joinToString(" - "))
