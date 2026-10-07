@@ -142,8 +142,8 @@ class LibraryViewModel(application:Application):AndroidViewModel(application) {
         play(book,pos,forceReload=true);playingJob?.join()
         if(!before.playing) controller?.pause()
     }
-    // The import overlay also shows imports started by downloads, which own their own job.
-    fun cancelImport() { if(importJob?.isActive==true) importJob?.cancel() else downloads.stopImport() }
+    // Stop cancels the import on screen, which may belong to a download; a stopped download can be retried.
+    fun cancelImport() { importer.cancelRunning() }
     fun forgetFolder(uri:String) { perform { store.forgetFolder(uri) } }
     fun rescan() { if(importJob?.isActive==true) return;importJob=viewModelScope.launch(errorHandler) { library.value.folders.forEach { importer.folder(Uri.parse(it)) };refreshActiveQueue();notice("Folder scan finished.") } }
     fun changeCover(id:Long,uri:Uri) { viewModelScope.launch(errorHandler) {
@@ -241,13 +241,15 @@ class LibraryViewModel(application:Application):AndroidViewModel(application) {
         val value=token.trim().ifBlank { downloads.settings.value.token }
         if(value.isBlank() || accountState.value.checking) return
         accountState.value=AccountState(checking=true)
-        viewModelScope.launch(errorHandler) {
+        verifyJob=viewModelScope.launch(errorHandler) {
             try { val user=downloads.verify(value);downloads.saveToken(value);accountState.value=AccountState(user=user);onSaved() }
             catch(e:CancellationException) { accountState.value=AccountState();throw e }
             catch(e:Exception) { accountState.value=AccountState(error=e.message ?: "Couldn't check this token.") }
         }
     }
-    fun disconnectRealDebrid() { downloads.saveToken("");accountState.value=AccountState() }
+    // Cancel a check in flight so its success can't save the token again.
+    fun disconnectRealDebrid() { verifyJob?.cancel();downloads.saveToken("");accountState.value=AccountState() }
+    private var verifyJob:Job?=null
     fun setDownloadSite(value:String):Boolean = runCatching { downloads.saveSite(value) }.onFailure { notice(it.message ?: "Enter a web address like audiobookbay.lu") }.isSuccess
     fun notice(text:String) { noticeState.value=text }
     private val undoState=MutableStateFlow<UndoNotice?>(null)

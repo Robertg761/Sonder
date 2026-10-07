@@ -51,7 +51,11 @@ class Importer(private val context:Context,private val store:LibraryStore) {
         }
         visit(root,0);return files
     }
+    @Volatile private var running:kotlinx.coroutines.Job?=null
+    /** Stops the import shown in [progress], whoever started it. Imports waiting for their turn still run. */
+    fun cancelRunning() { running?.cancel() }
     private suspend fun runImport(inputs:suspend () -> List<Input>):ImportProgress = withContext(Dispatchers.IO) { mutex.withLock {
+        running=coroutineContext[kotlinx.coroutines.Job]
         state.value=ImportProgress(true,"Scanning files")
         val errors=mutableListOf<String>();val temporaryCovers=mutableSetOf<String>();var done=0
         try {
@@ -101,7 +105,7 @@ class Importer(private val context:Context,private val store:LibraryStore) {
             state.value=ImportProgress(false,"Imported $imported ${if(imported==1) "book" else "books"}",candidates.size,candidates.size,errors)
         } catch(e:kotlinx.coroutines.CancellationException) { state.value=ImportProgress(errors=listOf("Import stopped. Completed books are in your library."));throw e }
         catch(e:Exception) { state.value=ImportProgress(errors=listOf(e.message ?: "Import failed. Check folder access and try again.")) }
-        finally { val used=store.library.value.books.map { it.cover }.toSet();temporaryCovers.filter { it !in used }.forEach { File(it).delete() } }
+        finally { running=null;val used=store.library.value.books.map { it.cover }.toSet();temporaryCovers.filter { it !in used }.forEach { File(it).delete() } }
         state.value
     } }
     private fun identity(uri:Uri):String = MediaIdentity.of(context,uri)

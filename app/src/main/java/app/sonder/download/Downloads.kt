@@ -88,12 +88,6 @@ class Downloads(private val context:Context,private val importer:Importer) {
             if(job.first.state!=DownloadJob.State.DONE && job.first.torrent.isNotBlank() && token.isNotBlank()) runCatching { RealDebrid(token).delete(job.first.torrent) }.onFailure { android.util.Log.w("Sonder","Could not delete Real-Debrid torrent",it) }
         }
     }
-    /** Stops a download that is adding its files to the library. It can be retried, which imports the files again. */
-    fun stopImport():Boolean = synchronized(lock) {
-        val id=currentId ?: return false
-        if(jobState.value.firstOrNull { it.id==id }?.message!=IMPORTING) return false
-        current?.cancel();true
-    }
     fun clearFinished() { synchronized(lock) { publish(jobState.value.filterNot { it.state==DownloadJob.State.DONE }) } }
     fun pending()=jobState.value.any { it.state==DownloadJob.State.QUEUED }
     private fun start() { ContextCompat.startForegroundService(context,Intent(context,DownloadService::class.java)) }
