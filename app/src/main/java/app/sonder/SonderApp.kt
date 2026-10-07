@@ -8,4 +8,7 @@ class SonderApp : Application() {
     val updater by lazy { app.sonder.update.AppUpdater(this) }
     val store by lazy { LibraryStore(this) }
     val preferences by lazy { Preferences(this) }
+    // One importer for the app, so downloads and manual imports share its lock and progress.
+    val importer by lazy { app.sonder.data.Importer(this, store) }
+    val downloads by lazy { app.sonder.download.Downloads(this, importer) }
 }

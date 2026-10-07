@@ -14,7 +14,7 @@ Install over your existing Sonder app to keep its library.
 
 ## Install and listen
 
-Open the supplied `Sonder-1.6.0.apk` on your Android phone. Install it over the existing app without uninstalling it to preserve your library, progress, bookmarks, and granted folder access. Android may ask you to allow installation from the app that opened the file. Open Sonder, tap **+**, and choose files or a folder through the system picker.
+Open the supplied `Sonder-1.7.0.apk` on your Android phone. Install it over the existing app without uninstalling it to preserve your library, progress, bookmarks, and granted folder access. Android may ask you to allow installation from the app that opened the file. Open Sonder, tap **+**, and choose files or a folder through the system picker.
 
 Folders are scanned recursively. Matching album and author tags group tracks into books across file and folder selections. Untagged M4B/MP4 files and files with multiple embedded chapters remain separate books. Other untagged tracks in the same folder are grouped using the folder name. Tracks use natural filename order. The original media files stay where you selected them, so keep that folder, SD card, or document provider available. Cloud document providers must make the files available locally for offline playback. If a provider refuses persistent read permission, Sonder warns you; selecting the file again may be required after restarting.
 
@@ -27,6 +27,22 @@ The public repository is [Robertg761/Sonder](https://github.com/Robertg761/Sonde
 Sonder checks the latest stable GitHub release when it opens, at most once a day. Settings includes an automatic-check toggle and a manual check. An update notice opens release notes and a download button. Downloads use Android DownloadManager and can finish with the app closed. Return to the app to install. Downloads are checked against the GitHub SHA-256 digest and the installed app's package, version, and signing certificate. Nothing is installed silently. Android asks for install permission and confirmation. If you allow installs from Sonder in Android settings, return and tap Install update again. Cancel or retry a failed download from the update sheet. If an abrupt shutdown happens just as a download starts, check again and retry if it does not appear.
 
 The `.github/workflows/android.yml` workflow builds, tests, and lints pull requests. A push to main with a new versionName and versionCode builds and signs a release, then publishes the APK, AAB, and checksums. Existing release versions are skipped. Update `RELEASE_NOTES.md` for each release. A matching version tag or manual workflow dispatch also runs the release workflow. The two signing secrets are `SONDER_KEYSTORE_B64` and `SONDER_KEYSTORE_PASSWORD`; the private key is decoded in a temporary directory and never committed. Keep the same key for every update.
+
+## AudioBookBay downloads
+
+Sonder can search AudioBookBay and download a book into your library through your [Real-Debrid](https://real-debrid.com) account. This is off until you set it up in **Settings → AudioBookBay downloads**:
+
+1. **Real-Debrid**: paste your API token from [real-debrid.com/apitoken](https://real-debrid.com/apitoken). Sonder checks it and shows your account. Torrents need a premium account.
+2. **Download folder**: choose a folder, such as `Audiobooks`, through the system picker. Sonder asks for read and write access to it.
+3. **AudioBookBay address**: AudioBookBay changes domains. If searches stop working, enter the address that works in your browser.
+
+Then tap **+ → Find on AudioBookBay**, search for a title or author, open a result, and tap **Download to library**. Sonder reads the page's info hash and trackers to build a magnet link, adds it to Real-Debrid, selects the audio files, and waits until Real-Debrid has the whole upload. Uploads Real-Debrid already has are usually ready immediately; others take as long as Real-Debrid needs to fetch them. Sonder then streams the files into a new folder named after the book and imports that folder like any other. Downloads continue with Sonder in the background and show progress in a notification.
+
+Sonder downloads only audio, CUE chapter sheets, and one cover image (saved as `cover.jpg`). Programs, archives, NFO/text files, scanned pages, and torrent padding are never downloaded. Pages that list programs show a warning, because audiobooks don't need them and fake uploads often include them. Uploads packed in ZIP/RAR archives can't be used. Disc folders such as `CD1/01.mp3` are flattened into one folder as `CD1 - 01.mp3` so the tracks import as one book in order.
+
+A failed or interrupted download keeps its partial files. **Retry** resumes from where it stopped and gets fresh Real-Debrid links. **Cancel** or **Remove** on an unfinished download deletes the folder Sonder created for it; removing a finished download only clears it from the list, and the book stays in your library. Real-Debrid keeps the torrent in your account's list. If Real-Debrid makes no progress for an hour, for example because the upload has no seeders, the download stops so you can retry later. Android 15 limits background data transfers to six hours a day; a download stopped that way can be retried.
+
+Respect the copyright laws where you live. Only download books you have the right to.
 
 ## Resuming playback
 
@@ -80,7 +96,8 @@ Android does not expose other apps' private folders through the shared-media ind
 - Daily goals, weekly listening chart, actual elapsed listening time, streaks, and completion counts.
 - Light, dark, and system themes; scrollable layouts; accessible control labels; and support for Android font scaling.
 - JSON export and transactional restore of book metadata, progress, collections, favorites, bookmarks, and reading history.
-- Local listening and reading data. No account, telemetry, advertising, or cloud service. Internet permission is used to check and download GitHub updates. Automatic system backup and transfer are excluded because saved document permissions do not transfer reliably.
+- Optional AudioBookBay search and Real-Debrid downloads straight into the library, with resumable background downloads that skip programs and other non-audio files.
+- Local listening and reading data. No account, telemetry, advertising, or cloud service. Internet permission is used to check and download GitHub updates and, when set up, for AudioBookBay downloads. Automatic system backup and transfer are excluded because saved document permissions do not transfer reliably.
 
 ## Format and storage limits
 
@@ -115,6 +132,7 @@ The supplied release uses GitHub updates and is intended for sideloading. Google
 - `data/DeviceScanner.kt` and `data/MediaIdentity.kt`: shared-media discovery and duplicate identity across scans and document picks.
 - `media/ChapterParser.kt`: bounded seek-based chapter/tag parsing; large media payloads are skipped.
 - `media/PlaybackService.kt`: service-owned player, trusted-controller checks, media notifications, progress and listening accounting, and sleep timers.
+- `download/`: AudioBookBay page parsing, the Real-Debrid API client, file selection and naming, and the saved download queue run by a data-sync foreground service.
 - `ui/LibraryViewModel.kt`: asynchronous player connection and user actions.
 - `ui/`: the library, player, details, collections, bookmarks, reading history, settings, and insights screens.
 - `src/test`: parser and malformed-data unit tests, including real QuickTime, FLAC, Vorbis, and Opus chapter fixtures.
