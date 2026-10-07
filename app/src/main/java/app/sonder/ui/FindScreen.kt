@@ -140,7 +140,8 @@ import kotlinx.coroutines.withContext
     Surface(shape=MaterialTheme.shapes.medium,color=MaterialTheme.colorScheme.errorContainer) { Row(Modifier.fillMaxWidth().padding(14.dp),verticalAlignment=Alignment.CenterVertically) { Icon(Icons.Rounded.WarningAmber,null,tint=MaterialTheme.colorScheme.onErrorContainer);Spacer(Modifier.width(12.dp));Text(text,style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onErrorContainer) } }
 }
 
-private object RemoteImages { val cache=LruCache<String,ImageBitmap>(60) }
+// Sized by decoded bytes: a 600×600 cover is about 1.4 MB.
+private object RemoteImages { val cache=object:LruCache<String,ImageBitmap>(24*1024*1024) { override fun sizeOf(key:String,value:ImageBitmap)=value.width*value.height*4 } }
 /** A cover from the web, falling back to Sonder's drawn cover while loading or when the image is unavailable. */
 @Composable fun RemoteCover(url:String,title:String,modifier:Modifier=Modifier,large:Boolean=false) {
     val image by produceState(RemoteImages.cache.get(url),url) {

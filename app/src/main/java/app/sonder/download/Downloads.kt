@@ -68,7 +68,10 @@ class Downloads(private val context:Context,private val importer:Importer) {
         start();return null
     }
     fun retry(id:String) { update(id) { if(it.active) it else it.copy(state=DownloadJob.State.QUEUED,message="Waiting to start",progress=-1f) };start() }
-    /** Stops and forgets a download. Unfinished downloads also lose their partial files; finished books stay in the library. */
+    /**
+     * Stops and forgets a download. Unfinished downloads also lose their partial files and their Real-Debrid
+     * torrent, so the transfer stops using the account. Finished books stay in the library.
+     */
     fun remove(id:String) {
         val job=synchronized(lock) {
             val job=jobState.value.firstOrNull { it.id==id } ?: return
@@ -80,7 +83,15 @@ class Downloads(private val context:Context,private val importer:Importer) {
             // Keep files the library may already point to.
             val importing=job.first.state==DownloadJob.State.WORKING && job.first.message==IMPORTING
             if(job.first.state!=DownloadJob.State.DONE && !importing && job.first.folder.isNotBlank()) runCatching { DocumentFile.fromTreeUri(context,Uri.parse(job.first.folder))?.delete() }
+            val token=settingsState.value.token
+            if(job.first.state!=DownloadJob.State.DONE && job.first.torrent.isNotBlank() && token.isNotBlank()) runCatching { RealDebrid(token).delete(job.first.torrent) }.onFailure { android.util.Log.w("Sonder","Could not delete Real-Debrid torrent",it) }
         }
+    }
+    /** Stops a download that is adding its files to the library. It can be retried, which imports the files again. */
+    fun stopImport():Boolean = synchronized(lock) {
+        val id=currentId ?: return false
+        if(jobState.value.firstOrNull { it.id==id }?.message!=IMPORTING) return false
+        current?.cancel();true
     }
     fun clearFinished() { synchronized(lock) { publish(jobState.value.filterNot { it.state==DownloadJob.State.DONE }) } }
     fun pending()=jobState.value.any { it.state==DownloadJob.State.QUEUED }
@@ -157,7 +168,7 @@ class Downloads(private val context:Context,private val importer:Importer) {
         while(true) {
             currentCoroutineContext().ensureActive()
             var job=find(id)
-            if(job.torrent.isBlank()) { status("Sending to Real-Debrid",-1f,0,0);val torrent=withContext(Dispatchers.IO) { rd.addMagnet(job.magnet) };job=update(id) { it.copy(torrent=torrent) } ?: throw CancellationException() }
+            if(job.torrent.isBlank()) { status("Sending to Real-Debrid",-1f,0,0);val torrent=withContext(Dispatchers.IO) { rd.addMagnet(job.magnet) };job=update(id) { it.copy(torrent=torrent) } ?: run { runCatching { rd.delete(torrent) };throw CancellationException("Download removed") } }
             val t=try { withContext(Dispatchers.IO) { rd.torrent(job.torrent) } }
                 catch(e:RealDebrid.Error) { if(e.status==404) { update(id) { it.copy(torrent="") };continue } else throw e }
             when {

@@ -142,7 +142,8 @@ class LibraryViewModel(application:Application):AndroidViewModel(application) {
         play(book,pos,forceReload=true);playingJob?.join()
         if(!before.playing) controller?.pause()
     }
-    fun cancelImport() { importJob?.cancel() }
+    // The import overlay also shows imports started by downloads, which own their own job.
+    fun cancelImport() { if(importJob?.isActive==true) importJob?.cancel() else downloads.stopImport() }
     fun forgetFolder(uri:String) { perform { store.forgetFolder(uri) } }
     fun rescan() { if(importJob?.isActive==true) return;importJob=viewModelScope.launch(errorHandler) { library.value.folders.forEach { importer.folder(Uri.parse(it)) };refreshActiveQueue();notice("Folder scan finished.") } }
     fun changeCover(id:Long,uri:Uri) { viewModelScope.launch(errorHandler) {

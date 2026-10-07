@@ -38,6 +38,7 @@ class RealDebrid(private val token:String) {
             (0 until links.length()).map { links.getString(it) })
     }
     fun select(id:String,files:List<Int>) { call("POST","/torrents/selectFiles/${Http.encode(id)}",mapOf("files" to files.joinToString(","))) }
+    fun delete(id:String) { call("DELETE","/torrents/delete/${Http.encode(id)}") }
     fun unrestrict(link:String):Link = json(call("POST","/unrestrict/link",mapOf("link" to link))).let { Link(it.optString("filename"),it.optLong("filesize"),it.getString("download")) }
 
     private fun json(body:String)=try { JSONObject(body) } catch(e:Exception) { throw IOException("Real-Debrid sent an unexpected response.") }
