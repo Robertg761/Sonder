@@ -38,6 +38,20 @@ class DownloadFolderDeleteTest {
         assertTrue(downloads.deleteBookFolder(listOf(FakeDocuments.document("primary:Audiobooks/Project Hail Mary/01.m4b"))))
         assertEquals(listOf("primary:Audiobooks/Project Hail Mary"),docs.deleted)
     }
+    @Test fun trustsTheProvidersFolderListingNotDocumentIds() {
+        // Opaque IDs: the track's ID says nothing about its folder, but the provider lists it as a child.
+        val docs=FakeDocuments.install(context).apply { writable+=listOf("primary:Audiobooks/Project Hail Mary","primary:Audiobooks/Project Hail Mary/7f3a") }
+        val downloads=downloads(job(DownloadJob.State.DONE))
+        assertTrue(downloads.deleteBookFolder(listOf(FakeDocuments.document("primary:Audiobooks/Project Hail Mary/7f3a"))))
+        assertEquals(listOf("primary:Audiobooks/Project Hail Mary"),docs.deleted)
+    }
+    @Test fun ignoresIdsThatOnlyLookLikeTheyAreInTheFolder() {
+        // A deeper path the provider doesn't list as a direct child of the book folder is not one of its tracks.
+        val docs=FakeDocuments.install(context).apply { writable+=listOf("primary:Audiobooks/Project Hail Mary","primary:Audiobooks/Project Hail Mary/Other/01.mp3") }
+        val downloads=downloads(job(DownloadJob.State.DONE))
+        assertFalse(downloads.deleteBookFolder(listOf(FakeDocuments.document("primary:Audiobooks/Project Hail Mary/Other/01.mp3"))))
+        assertTrue(docs.deleted.isEmpty())
+    }
     @Test fun keepsAFolderAnotherBookStillUses() {
         val docs=FakeDocuments.install(context).apply { writable+=listOf("primary:Audiobooks/Project Hail Mary/Book 1.m4b","primary:Audiobooks/Project Hail Mary/Book 2.m4b") }
         val downloads=downloads(job(DownloadJob.State.DONE))

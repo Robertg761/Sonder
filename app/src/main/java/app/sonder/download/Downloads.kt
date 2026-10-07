@@ -103,17 +103,23 @@ class Downloads(private val context:Context,private val importer:Importer) {
      * held several books.
      */
     fun deleteBookFolder(tracks:List<Uri>,others:List<Uri> = emptyList()):Boolean {
-        // Document IDs only mean something within their provider, so the provider is part of the key.
-        fun id(uri:Uri)=runCatching { "${uri.authority}|${android.provider.DocumentsContract.getDocumentId(uri)}" }.getOrNull()
-        val ids=tracks.map { id(it) ?: return false }
+        if(tracks.isEmpty()) return false
+        // Document IDs are opaque, so membership comes from the provider's own child listing. Downloads are
+        // flattened, so every track is a direct child of its book folder.
+        fun key(uri:Uri)=runCatching { "${uri.authority}|${android.provider.DocumentsContract.getDocumentId(uri)}" }.getOrNull()
+        val ids=tracks.map { key(it) ?: return false }.toSet()
         val running=jobState.value.filter { it.active }.map { it.folder }.toSet()
-        val folder=bookFolders().filter { it !in running }.firstOrNull { uri -> id(Uri.parse(uri))?.let { f -> ids.all { it.startsWith("$f/") } }==true } ?: return false
-        val key=id(Uri.parse(folder))
-        if(others.any { other -> id(other)?.startsWith("$key/")==true }) return false
+        val candidates=bookFolders().filter { it !in running && Uri.parse(it).authority==tracks.first().authority }
+        val (folder,children)=candidates.firstNotNullOfOrNull { uri -> children(Uri.parse(uri))?.takeIf { it.containsAll(ids) }?.let { uri to it } } ?: return false
+        if(others.any { key(it) in children }) return false
         val deleted=runCatching { android.provider.DocumentsContract.deleteDocument(context.contentResolver,Uri.parse(folder)) }.getOrDefault(false)
         if(deleted) { keepFolder(folder,false);synchronized(lock) { publish(jobState.value.filterNot { it.folder==folder }) } }
         return deleted
     }
+    private fun children(folder:Uri):Set<String>? = runCatching {
+        val provider=android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(folder,android.provider.DocumentsContract.getDocumentId(folder))
+        context.contentResolver.query(provider,arrayOf(android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID),null,null,null)?.use { c -> buildSet { while(c.moveToNext()) add("${folder.authority}|${c.getString(0)}") } }
+    }.getOrNull()
     fun clearFinished() { synchronized(lock) { publish(jobState.value.filterNot { it.state==DownloadJob.State.DONE }) } }
     fun pending()=jobState.value.any { it.state==DownloadJob.State.QUEUED }
     private fun start() { ContextCompat.startForegroundService(context,Intent(context,DownloadService::class.java)) }

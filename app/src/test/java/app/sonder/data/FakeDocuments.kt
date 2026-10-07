@@ -37,7 +37,14 @@ class FakeDocuments:ContentProvider() {
         return ParcelFileDescriptor.open(file,ParcelFileDescriptor.MODE_READ_ONLY)
     }
     override fun onCreate()=true
-    override fun query(uri:Uri,projection:Array<out String>?,selection:String?,selectionArgs:Array<out String>?,sortOrder:String?):Cursor?=null
+    /** Lists a folder's direct children, as DocumentsContract's child-documents query does. */
+    override fun query(uri:Uri,projection:Array<out String>?,selection:String?,selectionArgs:Array<out String>?,sortOrder:String?):Cursor? {
+        if(uri.pathSegments.lastOrNull()!="children") return null
+        val parent=uri.pathSegments[uri.pathSegments.size-2]
+        return android.database.MatrixCursor(arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID)).apply {
+            (writable+readOnly).filter { it.startsWith("$parent/") && '/' !in it.removePrefix("$parent/") }.forEach { addRow(arrayOf(it)) }
+        }
+    }
     override fun getType(uri:Uri):String?=null
     override fun insert(uri:Uri,values:ContentValues?):Uri?=null
     override fun delete(uri:Uri,selection:String?,selectionArgs:Array<out String>?)=0
