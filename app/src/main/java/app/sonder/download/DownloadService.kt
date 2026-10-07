@@ -60,6 +60,8 @@ class DownloadService:Service() {
             notify(job.id.hashCode(),finished(job.title,if(job.state==DownloadJob.State.DONE) "Added to your library" else job.message))
         }
     }
+    // MainActivity carries Media3's UnstableApi marker; opening it from a notification uses no Media3 API.
+    @androidx.annotation.OptIn(markerClass=[androidx.media3.common.util.UnstableApi::class])
     private fun open()=PendingIntent.getActivity(this,0,Intent(this,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     private fun progress(jobs:List<DownloadJob>):android.app.Notification {
         val job=jobs.firstOrNull { it.state==DownloadJob.State.WORKING } ?: jobs.lastOrNull { it.state==DownloadJob.State.QUEUED }
