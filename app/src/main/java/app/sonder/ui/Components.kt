@@ -9,6 +9,8 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -31,6 +33,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -112,8 +115,9 @@ val LocalHeaderActions=staticCompositionLocalOf<(@Composable RowScope.()->Unit)?
         Column(Modifier.padding(horizontal=18.dp,vertical=16.dp)) { Text(value,style=MaterialTheme.typography.headlineMedium,maxLines=1);Spacer(Modifier.height(2.dp));Text(label,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }
-@Composable fun SearchField(query:String,onQuery:(String)->Unit,placeholder:String,clearLabel:String,modifier:Modifier=Modifier) {
+@Composable fun SearchField(query:String,onQuery:(String)->Unit,placeholder:String,clearLabel:String,modifier:Modifier=Modifier,onSearch:(()->Unit)?=null) {
     OutlinedTextField(query,onQuery,placeholder={ Text(placeholder,maxLines=1,overflow=TextOverflow.Ellipsis) },leadingIcon={ Icon(Icons.Rounded.Search,null) },trailingIcon={ if(query.isNotEmpty()) IconAction(Icons.Rounded.Close,clearLabel,{ onQuery("") },tint=MaterialTheme.colorScheme.onSurfaceVariant) },singleLine=true,shape=MaterialTheme.shapes.extraLarge,modifier=modifier.fillMaxWidth(),
+        keyboardOptions=if(onSearch!=null) KeyboardOptions(imeAction=ImeAction.Search) else KeyboardOptions.Default,keyboardActions=KeyboardActions(onSearch={ onSearch?.invoke() }),
         colors=OutlinedTextFieldDefaults.colors(unfocusedContainerColor=MaterialTheme.colorScheme.surfaceContainer,focusedContainerColor=MaterialTheme.colorScheme.surfaceContainerLow,unfocusedBorderColor=Color.Transparent,unfocusedLeadingIconColor=MaterialTheme.colorScheme.onSurfaceVariant))
 }
 @Composable fun ChoiceChip(label:String,selected:Boolean,onClick:()->Unit) {

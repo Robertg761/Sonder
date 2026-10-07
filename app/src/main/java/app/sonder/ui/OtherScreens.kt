@@ -85,9 +85,13 @@ import java.util.Locale
 }
 
 @UnstableApi
-@Composable fun SettingsScreen(settings:Settings,vm:LibraryViewModel,library:Library,onFiles:()->Unit,onFolder:()->Unit,onExport:()->Unit,onRestore:()->Unit,onScan:()->Unit,onUpdate:()->Unit) {
+@Composable fun SettingsScreen(settings:Settings,vm:LibraryViewModel,library:Library,onFiles:()->Unit,onFolder:()->Unit,onExport:()->Unit,onRestore:()->Unit,onScan:()->Unit,onUpdate:()->Unit,onDownloadFolder:()->Unit,onFind:()->Unit) {
     var option by remember { mutableStateOf("") };var restoreConfirm by remember { mutableStateOf(false) };var licenses by remember { mutableStateOf(false) }
+    var tokenOpen by remember { mutableStateOf(false) };var siteOpen by remember { mutableStateOf(false) }
     val updater by vm.updater.state.collectAsStateWithLifecycle()
+    val downloads by vm.downloads.settings.collectAsStateWithLifecycle()
+    val account by vm.account.collectAsStateWithLifecycle()
+    LaunchedEffect(downloads.token) { if(downloads.token.isNotBlank() && account.user==null && account.error.isBlank()) vm.connectRealDebrid() }
     val update=vm.preferences::update
     LazyColumn(contentPadding=PaddingValues(start=20.dp,end=20.dp,top=4.dp,bottom=32.dp),verticalArrangement=Arrangement.spacedBy(20.dp)) {
         item { SettingsGroup("Appearance") { Row(Modifier.padding(16.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)) { listOf("System","Light","Dark").forEach { t -> ChoiceChip(t,settings.theme==t,{ update(settings.copy(theme=t)) }) } } } }
@@ -97,11 +101,18 @@ import java.util.Locale
             SettingAction("Add audio files","Import files from your phone or storage provider",Icons.Rounded.AudioFile,onFiles);SettingAction("Add a folder","Group audio tracks and read chapter files",Icons.Rounded.FolderOpen,onFolder);SettingAction("Scan device for audiobooks","Find shared audio without choosing a folder",Icons.Rounded.Search,onScan);if(library.folders.isNotEmpty()) SettingAction("Rescan saved folders","Add new files without importing duplicates",Icons.Rounded.Refresh,vm::rescan)
             library.folders.forEach { uri -> Row(Modifier.fillMaxWidth().padding(start=16.dp,end=4.dp,top=4.dp,bottom=4.dp),verticalAlignment=Alignment.CenterVertically) { Icon(Icons.Rounded.Folder,null,tint=MaterialTheme.colorScheme.onSurfaceVariant);Spacer(Modifier.width(16.dp));Text(android.net.Uri.decode(uri.substringAfterLast('/')),modifier=Modifier.weight(1f),style=MaterialTheme.typography.bodySmall,maxLines=2,overflow=TextOverflow.Ellipsis);IconAction(Icons.Rounded.Close,"Stop watching this folder",{ vm.forgetFolder(uri) },tint=MaterialTheme.colorScheme.onSurfaceVariant) } }
         } }
+        item { SettingsGroup("AudioBookBay downloads",footer="Search words go to AudioBookBay. The book's magnet link goes to Real-Debrid, which downloads it for you. Your API token stays on this device.") {
+            val user=account.user
+            SettingAction("Real-Debrid",when { downloads.token.isBlank() -> "Add your API token to download books";account.checking -> "Checking your account…";account.error.isNotBlank() -> account.error;user==null -> "Token saved";!user.premium -> "${user.name} · Free account. Torrents need premium.";else -> "${user.name} · Premium until ${user.expiration.take(10)}" },Icons.Rounded.Key,{ tokenOpen=true })
+            SettingAction("Download folder",if(downloads.folder.isBlank()) "Choose where downloaded books are saved" else android.net.Uri.decode(downloads.folder.substringAfterLast('/')).substringAfter(':').ifBlank { "Internal storage" },Icons.Rounded.CreateNewFolder,onDownloadFolder)
+            SettingAction("AudioBookBay address",downloads.site.removePrefix("https://"),Icons.Rounded.Language,{ siteOpen=true })
+            if(downloads.ready) SettingAction("Find audiobooks","Search and download into your library",Icons.Rounded.TravelExplore,onFind)
+        } }
         item { SettingsGroup("Backup & restore",footer="Backups include reading history, but do not contain audio or cover images. Reading records restore without media. Import original files to restore playback data. Folder permissions must be granted again on a new phone.") { SettingAction("Export library backup","Save playback data, bookmarks, and reading history",Icons.Rounded.FileUpload,onExport);SettingAction("Restore a backup","Restore saved information for imported books",Icons.Rounded.FileDownload,{ restoreConfirm=true }) } }
         item { SettingsGroup("App updates",footer=updater.message) { SettingSwitch("Automatic update checks","Check GitHub when you open Sonder, at most once a day",updater.automatic,vm.updater::automatic);SettingAction(if(updater.checking) "Checking for updates…" else "Check for updates","Installed version ${app.sonder.BuildConfig.VERSION_NAME}",Icons.Rounded.SystemUpdate,{ vm.updater.check() });if(updater.available!=null) SettingAction("Update to ${updater.available!!.version}",if(updater.phase=="ready") "Downloaded and ready to install" else "View release notes and download",Icons.Rounded.Download,onUpdate) } }
         item { SettingsGroup("About Sonder") {
             Column(Modifier.padding(16.dp)) {
-                Row(verticalAlignment=Alignment.CenterVertically) { SonderMark(Modifier.size(52.dp));Spacer(Modifier.width(14.dp));Column { Text("Sonder",style=MaterialTheme.typography.titleLarge);Text("Version ${app.sonder.BuildConfig.VERSION_NAME}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant) } };Spacer(Modifier.height(14.dp));Text("Your books stay on your device. Sonder has no account, advertising, or analytics. Internet access is used only to check and download updates from GitHub.",style=MaterialTheme.typography.bodyMedium)
+                Row(verticalAlignment=Alignment.CenterVertically) { SonderMark(Modifier.size(52.dp));Spacer(Modifier.width(14.dp));Column { Text("Sonder",style=MaterialTheme.typography.titleLarge);Text("Version ${app.sonder.BuildConfig.VERSION_NAME}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant) } };Spacer(Modifier.height(14.dp));Text("Your books stay on your device. Sonder has no account, advertising, or analytics. Internet access is used to check and download updates from GitHub and, if you set up downloads, to search AudioBookBay and download through Real-Debrid.",style=MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(16.dp));Text("Supported files",style=MaterialTheme.typography.titleSmall);Text("MP4, M4B, M4A, MP3, AAC, FLAC, OGG, OPUS, WAV, WebM, Matroska, AMR, and 3GP. Playback depends on the file's audio codec and the device decoder. MP4 video is played as audio.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.padding(top=4.dp))
                 Spacer(Modifier.height(12.dp));Text("Chapters",style=MaterialTheme.typography.titleSmall);Text("Chapters are read from MP4/M4B chapter lists and QuickTime chapter tracks, MP3 ID3 CHAP tags, Vorbis chapter comments, and folder CUE sheets. Files without chapter metadata become track chapters. DRM-protected AA, AAX, AAXC, and unsupported WMA/AIFF files need conversion to an unprotected supported format.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.padding(top=4.dp))
             }
@@ -119,6 +130,27 @@ import java.util.Locale
         AlertDialog(onDismissRequest={ option="" },title={ Text(option) },text={ Column(Modifier.selectableGroup().verticalScroll(rememberScrollState())) { values.forEach { n ->
             Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).selectable(selected=n==current,role=Role.RadioButton,onClick={ update(when(option) { "Daily goal" -> settings.copy(dailyGoal=n);"Smart rewind" -> settings.copy(smartRewind=n);"Rewind" -> settings.copy(rewind=n);else -> settings.copy(forward=n) });option="" }).padding(vertical=10.dp,horizontal=4.dp),verticalAlignment=Alignment.CenterVertically) { RadioButton(selected=n==current,onClick=null);Spacer(Modifier.width(14.dp));Text(if(n==0) "Off" else "$n ${if(option=="Daily goal") "minutes" else "seconds"}",style=MaterialTheme.typography.bodyLarge) }
         } } },confirmButton={},dismissButton={ TextButton({ option="" }) { Text("Cancel") } })
+    }
+    if(tokenOpen) {
+        var token by remember { mutableStateOf("") }
+        val uri=androidx.compose.ui.platform.LocalUriHandler.current
+        AlertDialog(onDismissRequest={ tokenOpen=false },title={ Text("Real-Debrid API token") },
+            text={ Column {
+                Text("Sign in at real-debrid.com, open your API token page, and paste the token here. Downloading torrents needs a premium account.",style=MaterialTheme.typography.bodyMedium)
+                TextButton({ uri.openUri("https://real-debrid.com/apitoken") },contentPadding=PaddingValues(0.dp)) { Text("Open real-debrid.com/apitoken") }
+                OutlinedTextField(token,{ token=it.trim() },label={ Text(if(downloads.token.isBlank()) "API token" else "New API token") },singleLine=true,visualTransformation=androidx.compose.ui.text.input.PasswordVisualTransformation(),modifier=Modifier.fillMaxWidth())
+                if(account.checking) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top=12.dp))
+                if(account.error.isNotBlank() && token.isNotBlank()) Text(account.error,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall,modifier=Modifier.padding(top=8.dp))
+            } },
+            confirmButton={ TextButton({ vm.connectRealDebrid(token) { tokenOpen=false } },enabled=token.isNotBlank() && !account.checking) { Text("Connect") } },
+            dismissButton={ Row { if(downloads.token.isNotBlank()) TextButton({ vm.disconnectRealDebrid();tokenOpen=false }) { Text("Remove token") };TextButton({ tokenOpen=false }) { Text("Cancel") } } })
+    }
+    if(siteOpen) {
+        var site by remember { mutableStateOf(downloads.site.removePrefix("https://")) }
+        AlertDialog(onDismissRequest={ siteOpen=false },title={ Text("AudioBookBay address") },
+            text={ Column { Text("AudioBookBay moves between addresses. If searches stop working, enter the address that works in your browser.",style=MaterialTheme.typography.bodyMedium);Spacer(Modifier.height(12.dp));OutlinedTextField(site,{ site=it.trim() },label={ Text("Address") },singleLine=true,modifier=Modifier.fillMaxWidth()) } },
+            confirmButton={ TextButton({ if(vm.setDownloadSite(site)) siteOpen=false },enabled=site.isNotBlank()) { Text("Save") } },
+            dismissButton={ Row { TextButton({ vm.setDownloadSite(app.sonder.download.AudioBookBay.DEFAULT_SITE);siteOpen=false }) { Text("Reset") };TextButton({ siteOpen=false }) { Text("Cancel") } } })
     }
     if(restoreConfirm) AlertDialog(onDismissRequest={ restoreConfirm=false },title={ Text("Restore your library information?") },text={ Text("Matching library books receive the backup's metadata, listening progress, and bookmarks. Current bookmarks on those books are replaced. Reading history is merged by entry ID and restores without audio. Export a backup first to keep the current state.") },confirmButton={ TextButton({ restoreConfirm=false;onRestore() }) { Text("Choose backup") } },dismissButton={ TextButton({ restoreConfirm=false }) { Text("Cancel") } })
 }

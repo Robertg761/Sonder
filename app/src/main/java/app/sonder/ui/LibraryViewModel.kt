@@ -17,6 +17,8 @@ import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionToken
 import app.sonder.SonderApp
 import app.sonder.data.*
+import app.sonder.download.AudioBookBay
+import app.sonder.download.RealDebrid
 import app.sonder.media.PlaybackService
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,6 +28,9 @@ import java.io.File
 data class DeviceScanState(val running:Boolean=false,val completed:Boolean=false,val result:DeviceScanner.Result=DeviceScanner.Result(emptyList()),val error:String="")
 data class UndoNotice(val message:String,val undo:()->Unit)
 data class Playback(val bookId:Long=0,val position:Long=0,val playing:Boolean=false,val buffering:Boolean=false,val speed:Float=1f,val error:String="")
+data class FindState(val query:String="",val loading:Boolean=false,val results:List<AudioBookBay.Listing> = emptyList(),val page:Int=0,val next:Boolean=false,val error:String="",val searched:Boolean=false)
+data class FindDetails(val listing:AudioBookBay.Listing,val details:AudioBookBay.Details?=null,val error:String="")
+data class AccountState(val checking:Boolean=false,val user:RealDebrid.User?=null,val error:String="")
 @UnstableApi
 class LibraryViewModel(application:Application):AndroidViewModel(application) {
     private val app=application as SonderApp
@@ -34,7 +39,7 @@ class LibraryViewModel(application:Application):AndroidViewModel(application) {
     val preferences=app.preferences
     val library=store.library
     val settings=preferences.settings
-    val importer=Importer(app,store)
+    val importer=app.importer
     val importProgress=importer.progress
     val sleep=PlaybackService.timer
     private val playerState=MutableStateFlow(Playback())
@@ -137,7 +142,8 @@ class LibraryViewModel(application:Application):AndroidViewModel(application) {
         play(book,pos,forceReload=true);playingJob?.join()
         if(!before.playing) controller?.pause()
     }
-    fun cancelImport() { importJob?.cancel() }
+    // Stop cancels the import on screen, which may belong to a download; a stopped download can be retried.
+    fun cancelImport() { importer.cancelRunning() }
     fun forgetFolder(uri:String) { perform { store.forgetFolder(uri) } }
     fun rescan() { if(importJob?.isActive==true) return;importJob=viewModelScope.launch(errorHandler) { library.value.folders.forEach { importer.folder(Uri.parse(it)) };refreshActiveQueue();notice("Folder scan finished.") } }
     fun changeCover(id:Long,uri:Uri) { viewModelScope.launch(errorHandler) {
@@ -195,6 +201,56 @@ class LibraryViewModel(application:Application):AndroidViewModel(application) {
     fun restore(uri:Uri) { viewModelScope.launch(errorHandler) {
         runCatching { val text=withContext(Dispatchers.IO) { app.contentResolver.openInputStream(uri)?.use { val bytes=it.readBounded(8_000_001);require(bytes.size<=8_000_000);bytes.toString(Charsets.UTF_8) } ?: error("Cannot open backup") };store.restore(text) }.onSuccess { controller?.pause();controller?.stop();controller?.clearMediaItems();loadedTracks=emptyList();updatePlayback();notice("Restored $it library books. ${library.value.readingHistory.size} reading history entries available.") }.onFailure { notice("Could not restore this backup. Check the file and version.") }
     } }
+    val downloads=app.downloads
+    private val findState=MutableStateFlow(FindState())
+    val find=findState.asStateFlow()
+    private val detailState=MutableStateFlow<FindDetails?>(null)
+    val findDetails=detailState.asStateFlow()
+    private var findJob:Job?=null
+    private var detailJob:Job?=null
+    fun search(query:String,more:Boolean=false) {
+        val current=findState.value
+        if(query.isBlank() || more && (current.loading || !current.next)) return
+        findJob?.cancel()
+        findState.value=if(more) current.copy(loading=true,error="") else FindState(query.trim(),loading=true,searched=true)
+        findJob=viewModelScope.launch(errorHandler) {
+            try {
+                val page=withContext(Dispatchers.IO) { AudioBookBay.search(downloads.settings.value.site,query,if(more) current.page+1 else 1) }
+                findState.value=findState.value.copy(loading=false,results=(findState.value.results+page.results).distinctBy { it.url },page=page.page,next=page.next && page.results.isNotEmpty())
+            } catch(e:CancellationException) { throw e }
+            catch(e:Exception) { findState.value=findState.value.copy(loading=false,error=e.message ?: "Search failed. Try again.") }
+        }
+    }
+    fun openListing(listing:AudioBookBay.Listing) {
+        detailJob?.cancel();detailState.value=FindDetails(listing)
+        detailJob=viewModelScope.launch(errorHandler) {
+            try { val details=withContext(Dispatchers.IO) { AudioBookBay.details(downloads.settings.value.site,listing) };detailState.value=detailState.value?.takeIf { it.listing==listing }?.copy(details=details) }
+            catch(e:CancellationException) { throw e }
+            catch(e:Exception) { detailState.value=detailState.value?.takeIf { it.listing==listing }?.copy(error=e.message ?: "Couldn't open this book. Try again.") }
+        }
+    }
+    fun closeListing() { detailJob?.cancel();detailState.value=null }
+    fun download(details:AudioBookBay.Details) {
+        runCatching { downloads.enqueue(details) }.onSuccess { notice(it ?: "Downloading ${details.title}. It will appear in your library when it's ready.") }
+            .onFailure { android.util.Log.e("Sonder","Could not start download",it);notice("Couldn't start the download. Open Sonder and try again.") }
+    }
+    private val accountState=MutableStateFlow(AccountState())
+    val account=accountState.asStateFlow()
+    /** Checks a token with Real-Debrid. A blank token checks the saved one. Valid tokens are saved. */
+    fun connectRealDebrid(token:String="",onSaved:()->Unit={}) {
+        val value=token.trim().ifBlank { downloads.settings.value.token }
+        if(value.isBlank() || accountState.value.checking) return
+        accountState.value=AccountState(checking=true)
+        verifyJob=viewModelScope.launch(errorHandler) {
+            try { val user=downloads.verify(value);downloads.saveToken(value);accountState.value=AccountState(user=user);onSaved() }
+            catch(e:CancellationException) { accountState.value=AccountState();throw e }
+            catch(e:Exception) { accountState.value=AccountState(error=e.message ?: "Couldn't check this token.") }
+        }
+    }
+    // Cancel a check in flight so its success can't save the token again.
+    fun disconnectRealDebrid() { verifyJob?.cancel();downloads.saveToken("");accountState.value=AccountState() }
+    private var verifyJob:Job?=null
+    fun setDownloadSite(value:String):Boolean = runCatching { downloads.saveSite(value) }.onFailure { notice(it.message ?: "Enter a web address like audiobookbay.lu") }.isSuccess
     fun notice(text:String) { noticeState.value=text }
     private val undoState=MutableStateFlow<UndoNotice?>(null)
     val undo=undoState.asStateFlow()
