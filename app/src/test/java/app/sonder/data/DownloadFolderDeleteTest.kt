@@ -30,6 +30,14 @@ class DownloadFolderDeleteTest {
         assertTrue(docs.writable.isEmpty())
         assertTrue("The download can be found and downloaded again",downloads.jobs.value.isEmpty())
     }
+    @Test fun stillDeletesTheWholeFolderAfterFinishedDownloadsAreCleared() {
+        val docs=FakeDocuments.install(context).apply { writable+=listOf("primary:Audiobooks/Project Hail Mary","primary:Audiobooks/Project Hail Mary/01.m4b","primary:Audiobooks/Project Hail Mary/cover.jpg") }
+        val downloads=downloads(job(DownloadJob.State.DONE))
+        downloads.clearFinished()
+        assertTrue(downloads.jobs.value.isEmpty())
+        assertTrue(downloads.deleteBookFolder(listOf(FakeDocuments.document("primary:Audiobooks/Project Hail Mary/01.m4b"))))
+        assertEquals(listOf("primary:Audiobooks/Project Hail Mary"),docs.deleted)
+    }
     @Test fun keepsAFolderAnotherBookStillUses() {
         val docs=FakeDocuments.install(context).apply { writable+=listOf("primary:Audiobooks/Project Hail Mary/Book 1.m4b","primary:Audiobooks/Project Hail Mary/Book 2.m4b") }
         val downloads=downloads(job(DownloadJob.State.DONE))

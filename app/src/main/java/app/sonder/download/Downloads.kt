@@ -45,6 +45,8 @@ class Downloads(private val context:Context,private val importer:Importer) {
     val settings=settingsState.asStateFlow()
     private val jobState=MutableStateFlow(load())
     val jobs=jobState.asStateFlow()
+    // Downloads from before folders were recorded separately seed the record from the download list.
+    init { if(!prefs.contains("bookFolders")) prefs.edit().putStringSet("bookFolders",jobState.value.map { it.folder }.filter { it.isNotBlank() }.toSet()).apply() }
     private val lock=Any()
     private val scope=CoroutineScope(SupervisorJob()+Dispatchers.IO)
     private var current:Job?=null
@@ -83,25 +85,33 @@ class Downloads(private val context:Context,private val importer:Importer) {
         scope.launch {
             job.second?.cancelAndJoin()
             // Keep files the library may already point to.
-            if(job.first.state!=DownloadJob.State.DONE && !job.first.imported && job.first.folder.isNotBlank()) runCatching { DocumentFile.fromTreeUri(context,Uri.parse(job.first.folder))?.delete() }
+            if(job.first.state!=DownloadJob.State.DONE && !job.first.imported && job.first.folder.isNotBlank()) runCatching { if(DocumentFile.fromTreeUri(context,Uri.parse(job.first.folder))?.delete()==true) keepFolder(job.first.folder,false) }
             val token=settingsState.value.token
             if(job.first.state!=DownloadJob.State.DONE && job.first.torrent.isNotBlank() && token.isNotBlank()) runCatching { RealDebrid(token).delete(job.first.torrent) }.onFailure { android.util.Log.w("Sonder","Could not delete Real-Debrid torrent",it) }
         }
     }
     /**
-     * Deletes the book folder a download created when [tracks] all live in it, and forgets that download so the
-     * book can be downloaded again. Returns false when the tracks didn't come from a Sonder download, or when
-     * [others] (other books' tracks) also live in the folder, as when one upload held several books.
+     * Book folders Sonder created, kept apart from the visible download list so clearing finished downloads
+     * doesn't forget which folders Delete from phone may remove whole.
+     */
+    private fun bookFolders():Set<String> = prefs.getStringSet("bookFolders",null).orEmpty().toSet()
+    private fun keepFolder(uri:String,keep:Boolean) { synchronized(lock) { prefs.edit().putStringSet("bookFolders",if(keep) bookFolders()+uri else bookFolders()-uri).apply() } }
+    /**
+     * Deletes the book folder a download created when [tracks] all live in it, and forgets it and its download so
+     * the book can be downloaded again. Returns false when the tracks didn't come from a Sonder download, when that
+     * download is still running, or when [others] (other books' tracks) also live in the folder, as when one upload
+     * held several books.
      */
     fun deleteBookFolder(tracks:List<Uri>,others:List<Uri> = emptyList()):Boolean {
         // Document IDs only mean something within their provider, so the provider is part of the key.
         fun id(uri:Uri)=runCatching { "${uri.authority}|${android.provider.DocumentsContract.getDocumentId(uri)}" }.getOrNull()
         val ids=tracks.map { id(it) ?: return false }
-        val job=jobState.value.firstOrNull { job -> !job.active && job.folder.isNotBlank() && id(Uri.parse(job.folder))?.let { folder -> ids.all { it.startsWith("$folder/") } }==true } ?: return false
-        val folder=id(Uri.parse(job.folder))
-        if(others.any { other -> id(other)?.startsWith("$folder/")==true }) return false
-        val deleted=runCatching { android.provider.DocumentsContract.deleteDocument(context.contentResolver,Uri.parse(job.folder)) }.getOrDefault(false)
-        if(deleted) synchronized(lock) { publish(jobState.value.filterNot { it.id==job.id }) }
+        val running=jobState.value.filter { it.active }.map { it.folder }.toSet()
+        val folder=bookFolders().filter { it !in running }.firstOrNull { uri -> id(Uri.parse(uri))?.let { f -> ids.all { it.startsWith("$f/") } }==true } ?: return false
+        val key=id(Uri.parse(folder))
+        if(others.any { other -> id(other)?.startsWith("$key/")==true }) return false
+        val deleted=runCatching { android.provider.DocumentsContract.deleteDocument(context.contentResolver,Uri.parse(folder)) }.getOrDefault(false)
+        if(deleted) { keepFolder(folder,false);synchronized(lock) { publish(jobState.value.filterNot { it.folder==folder }) } }
         return deleted
     }
     fun clearFinished() { synchronized(lock) { publish(jobState.value.filterNot { it.state==DownloadJob.State.DONE }) } }
@@ -215,6 +225,7 @@ class Downloads(private val context:Context,private val importer:Importer) {
         val base=DownloadPlan.folderName(job.title);var name=base;var n=1
         while(root.findFile(name)!=null) name="$base (${++n})"
         val dir=root.createDirectory(name) ?: error("Couldn't create a folder for this book. Choose the download folder again in Settings.")
+        keepFolder(dir.uri.toString(),true)
         update(id) { it.copy(folder=dir.uri.toString()) }
         return dir
     }
