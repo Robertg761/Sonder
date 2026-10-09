@@ -37,7 +37,8 @@ import kotlinx.coroutines.withContext
     val state by vm.find.collectAsStateWithLifecycle()
     val detail by vm.findDetails.collectAsStateWithLifecycle()
     val jobs by vm.downloads.jobs.collectAsStateWithLifecycle()
-    detail?.let { ListingDetails(it,jobs,onDownload={ d -> onNotification();vm.download(d) },onRetry={ vm.openListing(it.listing) });return }
+    val checking by vm.checking.collectAsStateWithLifecycle()
+    detail?.let { ListingDetails(it,jobs,checking,onDownload={ d -> onNotification();vm.download(d) },onCancel={ job -> vm.downloads.remove(job.id) },onRetry={ vm.openListing(it.listing) },onDismissProblem=vm::dismissProblem);return }
     var query by rememberSaveable { mutableStateOf(state.query) }
     val focus=LocalFocusManager.current
     LazyColumn(contentPadding=PaddingValues(start=24.dp,end=24.dp,top=16.dp,bottom=24.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
@@ -87,14 +88,14 @@ import kotlinx.coroutines.withContext
                     Text(job.message+detail,style=MaterialTheme.typography.bodySmall,color=if(job.state==DownloadJob.State.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if(job.state==DownloadJob.State.FAILED) IconAction(Icons.Rounded.Refresh,"Retry download",onRetry,tint=MaterialTheme.colorScheme.primary)
-                IconAction(if(job.active) Icons.Rounded.Close else Icons.Rounded.DeleteOutline,if(job.active) "Cancel download" else "Remove from downloads",onRemove,tint=MaterialTheme.colorScheme.onSurfaceVariant)
+                if(job.active) TextButton(onRemove) { Text("Cancel") } else IconAction(Icons.Rounded.DeleteOutline,"Remove from downloads",onRemove,tint=MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if(job.state==DownloadJob.State.WORKING) Box(Modifier.padding(top=10.dp,end=12.dp)) { if(job.progress>=0) ProgressBar(job.progress) else LinearProgressIndicator(Modifier.fillMaxWidth().height(4.dp).clip(MaterialTheme.shapes.extraLarge)) }
         }
     }
 }
 
-@Composable private fun ListingDetails(state:FindDetails,jobs:List<DownloadJob>,onDownload:(AudioBookBay.Details)->Unit,onRetry:()->Unit) {
+@Composable private fun ListingDetails(state:FindDetails,jobs:List<DownloadJob>,checking:Set<String>,onDownload:(AudioBookBay.Details)->Unit,onCancel:(DownloadJob)->Unit,onRetry:()->Unit,onDismissProblem:()->Unit) {
     val details=state.details
     val listing=state.listing
     LazyColumn(contentPadding=PaddingValues(start=24.dp,end=24.dp,top=4.dp,bottom=32.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
@@ -116,9 +117,19 @@ import kotlinx.coroutines.withContext
                 details==null -> LinearProgressIndicator(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.extraLarge))
                 else -> {
                     val job=jobs.firstOrNull { it.hash==details.hash }
-                    Button({ onDownload(details) },Modifier.fillMaxWidth().heightIn(min=54.dp),enabled=details.playable && job?.active!=true && job?.state!=DownloadJob.State.DONE,shape=MaterialTheme.shapes.medium) {
-                        Icon(Icons.Rounded.Download,null);Spacer(Modifier.width(10.dp))
-                        Text(when { job?.active==true -> "Downloading…";job?.state==DownloadJob.State.DONE -> "Downloaded";job?.state==DownloadJob.State.FAILED -> "Retry download";else -> "Download to library" })
+                    when {
+                        job?.active==true -> Column {
+                            OutlinedButton({ onCancel(job) },Modifier.fillMaxWidth().heightIn(min=54.dp),shape=MaterialTheme.shapes.medium) { Icon(Icons.Rounded.Close,null);Spacer(Modifier.width(10.dp));Text("Cancel download") }
+                            Caption(job.message)
+                        }
+                        details.hash in checking -> Column {
+                            Button({},Modifier.fillMaxWidth().heightIn(min=54.dp),enabled=false,shape=MaterialTheme.shapes.medium) { CircularProgressIndicator(Modifier.size(20.dp),color=LocalContentColor.current,strokeWidth=2.dp);Spacer(Modifier.width(12.dp));Text("Checking for seeders…") }
+                            Caption("Real-Debrid is looking for people sharing this upload before it starts. This can take up to a minute.")
+                        }
+                        else -> Button({ onDownload(details) },Modifier.fillMaxWidth().heightIn(min=54.dp),enabled=details.playable && job?.state!=DownloadJob.State.DONE,shape=MaterialTheme.shapes.medium) {
+                            Icon(Icons.Rounded.Download,null);Spacer(Modifier.width(10.dp))
+                            Text(when { job?.state==DownloadJob.State.DONE -> "Downloaded";job?.state==DownloadJob.State.FAILED -> "Retry download";else -> "Download to library" })
+                        }
                     }
                 }
             }
@@ -136,7 +147,9 @@ import kotlinx.coroutines.withContext
             if(details.description.isNotBlank()) item { SelectionContainer { Text(details.description,style=MaterialTheme.typography.bodyMedium) } }
         }
     }
+    if(state.problem.isNotBlank()) AlertDialog(onDismissRequest=onDismissProblem,icon={ Icon(Icons.Rounded.CloudOff,null) },title={ Text("This won't download right now") },text={ Text(state.problem) },confirmButton={ TextButton(onDismissProblem) { Text("OK") } })
 }
+@Composable private fun Caption(text:String) { Text(text,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.padding(top=8.dp,start=4.dp,end=4.dp)) }
 @Composable private fun Notice(text:String) {
     Surface(shape=MaterialTheme.shapes.medium,color=MaterialTheme.colorScheme.errorContainer) { Row(Modifier.fillMaxWidth().padding(14.dp),verticalAlignment=Alignment.CenterVertically) { Icon(Icons.Rounded.WarningAmber,null,tint=MaterialTheme.colorScheme.onErrorContainer);Spacer(Modifier.width(12.dp));Text(text,style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onErrorContainer) } }
 }

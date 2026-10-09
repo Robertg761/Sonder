@@ -24,8 +24,17 @@ class RealDebrid(private val token:String) {
             "downloaded" -> "Ready on Real-Debrid"
             "magnet_error" -> "Real-Debrid couldn't read this magnet link."
             "virus" -> "Real-Debrid flagged this upload as a virus."
-            "dead" -> "This upload has no seeders, so Real-Debrid can't fetch it."
+            "dead" -> "This upload has no seeders, so Real-Debrid can't fetch it. Try again another time, or pick another upload."
             else -> "Real-Debrid couldn't download this upload."
+        }
+        /**
+         * True once a new torrent shows it can finish: already cached, fetching from someone, or past fetching.
+         * A queued torrent waits for a free slot on the account before it looks for seeders, so it gets the benefit of the doubt.
+         */
+        fun alive(t:Torrent)=when(t.status) {
+            "downloaded","queued","compressing","uploading" -> true
+            "downloading" -> t.seeders>0 || t.speed>0 || t.progress>0
+            else -> false
         }
     }
 
