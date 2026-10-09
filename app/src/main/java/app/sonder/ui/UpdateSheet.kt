@@ -7,10 +7,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.sonder.update.AppUpdater
 import app.sonder.update.ReleaseInfo
+import app.sonder.update.ReleaseNotes
 import app.sonder.update.UpdateState
 import kotlinx.coroutines.launch
 
@@ -33,7 +38,7 @@ import kotlinx.coroutines.launch
             Column(Modifier.weight(1f,fill=false).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(16.dp)) {
                 Text("A new chapter for Sonder",style=MaterialTheme.typography.headlineMedium)
                 Text("Version ${info.version} · ${"%.1f".format(info.size/1_000_000.0)} MB",style=MaterialTheme.typography.titleMedium,color=MaterialTheme.colorScheme.primary)
-                if(info.notes.isNotBlank()) Text(info.notes,style=MaterialTheme.typography.bodyMedium)
+                if(info.notes.isNotBlank()) ReleaseNotesText(info.notes)
                 Text("The update comes from Sonder's GitHub releases. Your library and reading history stay saved. Android will ask you to confirm installation.",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(4.dp))
             }
@@ -50,6 +55,24 @@ import kotlinx.coroutines.launch
                 if(state.message.isNotBlank()) Text(state.message,color=MaterialTheme.colorScheme.error)
                 if(error.isNotBlank()) Text(error,color=MaterialTheme.colorScheme.error)
                 TextButton(onDismiss,modifier=Modifier.fillMaxWidth()) { Text("Later") }
+            }
+        }
+    }
+}
+
+/** Release notes with their headings, bullets and bold text formatted. */
+@Composable private fun ReleaseNotesText(notes:String) {
+    val blocks=remember(notes) { ReleaseNotes.parse(notes) }
+    Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+        blocks.forEach { block ->
+            val text=buildAnnotatedString { ReleaseNotes.inline(block.text).forEach { run -> if(run.bold) withStyle(SpanStyle(fontWeight=FontWeight.SemiBold)) { append(run.text) } else append(run.text) } }
+            when(block.kind) {
+                ReleaseNotes.Kind.HEADING -> Text(text,style=MaterialTheme.typography.titleSmall,modifier=Modifier.padding(top=4.dp))
+                ReleaseNotes.Kind.PARAGRAPH -> Text(text,style=MaterialTheme.typography.bodyMedium)
+                ReleaseNotes.Kind.BULLET -> Row(Modifier.padding(start=(block.level*16).dp)) {
+                    Text(if(block.level==0) "•" else "◦",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.primary,modifier=Modifier.width(18.dp))
+                    Text(text,style=MaterialTheme.typography.bodyMedium,modifier=Modifier.weight(1f))
+                }
             }
         }
     }

@@ -6,7 +6,10 @@ import java.io.IOException
 
 /** Real-Debrid REST API client. Uses a personal API token from real-debrid.com/apitoken. */
 class RealDebrid(private val token:String) {
-    data class User(val name:String,val premium:Boolean,val expiration:String)
+    data class User(val name:String,val premium:Boolean,val expiration:String) {
+        /** Whole days of premium left at [now], or null when Real-Debrid sent no readable date. */
+        fun daysLeft(now:Long=System.currentTimeMillis()):Long? = runCatching { java.time.Instant.parse(expiration).toEpochMilli() }.getOrNull()?.let { Math.floorDiv(it-now,86_400_000L) }
+    }
     data class File(val id:Int,val path:String,val bytes:Long,val selected:Boolean=false)
     data class Torrent(val id:String,val status:String,val progress:Int,val seeders:Int,val speed:Long,val bytes:Long,val files:List<File>,val links:List<String>)
     data class Link(val name:String,val size:Long,val url:String)
@@ -31,6 +34,12 @@ class RealDebrid(private val token:String) {
          * True once a new torrent shows it can finish: already cached, fetching from someone, or past fetching.
          * A queued torrent waits for a free slot on the account before it looks for seeders, so it gets the benefit of the doubt.
          */
+        /** True for failures worth retrying: dropped connections, rate limits, and Real-Debrid's own outages. */
+        fun temporary(e:Throwable)=when(e) {
+            is Error -> e.status==429 || e.status>=500 || e.code in setOf(5,25,34)
+            is IOException -> true
+            else -> false
+        }
         fun alive(t:Torrent)=when(t.status) {
             "downloaded","queued","compressing","uploading" -> true
             "downloading" -> t.seeders>0 || t.speed>0 || t.progress>0

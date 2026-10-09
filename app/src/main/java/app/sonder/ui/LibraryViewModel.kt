@@ -286,21 +286,24 @@ class LibraryViewModel(application:Application,private val saved:androidx.lifecy
      * Checks with Real-Debrid that someone is sharing the upload, then queues it. An upload that can't download now
      * gets an explanation instead, on the book if it's still open. The check carries on if the book is closed.
      */
-    fun download(details:AudioBookBay.Details) {
-        downloads.blocked(details.hash)?.let { notice(it);return }
-        if(details.hash in checkState.value) return
-        checkState.update { it+details.hash }
+    fun download(details:AudioBookBay.Details) = checked(details.hash,details.title,details.magnet) { downloads.enqueue(details,it) }
+    /** Retries a stopped download, checking for seeders first just like a new one. */
+    fun retry(job:app.sonder.download.DownloadJob) = checked(job.hash,job.title,job.magnet) { downloads.retry(job.id,it);null }
+    private fun checked(hash:String,title:String,magnet:String,queue:(String)->String?) {
+        downloads.blocked(hash)?.let { notice(it);return }
+        if(hash in checkState.value) return
+        checkState.update { it+hash }
         viewModelScope.launch(errorHandler) {
             try {
-                val torrent=downloads.preflight(details)
-                runCatching { downloads.enqueue(details,torrent) }.onSuccess { notice(it ?: "Downloading ${details.title}. It will appear in your library when it's ready.") }
+                val torrent=downloads.preflight(hash,magnet)
+                runCatching { queue(torrent) }.onSuccess { notice(it ?: "Downloading $title. It will appear in your library when it's ready.") }
                     .onFailure { android.util.Log.e("Sonder","Could not start download",it);notice("Couldn't start the download. Open Sonder and try again.") }
             } catch(e:CancellationException) { throw e }
             catch(e:Exception) {
                 android.util.Log.w("Sonder","Download check failed",e)
                 val message=e.message ?: "Couldn't check this upload with Real-Debrid. Try again."
-                if(detailState.value?.details?.hash==details.hash) detailState.update { it?.copy(problem=message) } else notice("${details.title}: $message")
-            } finally { checkState.update { it-details.hash } }
+                if(detailState.value?.details?.hash==hash) detailState.update { it?.copy(problem=message) } else notice("$title: $message")
+            } finally { checkState.update { it-hash } }
         }
     }
     fun dismissProblem() { detailState.update { it?.copy(problem="") } }

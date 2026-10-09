@@ -49,7 +49,7 @@ import kotlinx.coroutines.withContext
         }
         if(jobs.isNotEmpty()) {
             item { Row(verticalAlignment=Alignment.CenterVertically) { Box(Modifier.weight(1f)) { SectionTitle("Downloads") };if(jobs.any { it.state==DownloadJob.State.DONE }) TextButton(vm.downloads::clearFinished) { Text("Clear finished") } } }
-            items(jobs,key={ "job-${it.id}" }) { job -> DownloadRow(job,onRetry={ onNotification();vm.downloads.retry(job.id) },onRemove={ vm.downloads.remove(job.id) }) }
+            items(jobs,key={ "job-${it.id}" }) { job -> DownloadRow(job,job.hash in checking,onRetry={ onNotification();vm.retry(job) },onRemove={ vm.downloads.remove(job.id) }) }
         }
         if(state.searched) item { SectionTitle(if(state.loading && state.results.isEmpty()) "Searching…" else "Results",if(state.results.isNotEmpty()) "${state.results.size}${if(state.next) "+" else ""}" else "") }
         items(state.results,key={ "result-${it.url}" }) { listing -> ListingRow(listing) { vm.openListing(listing) } }
@@ -77,17 +77,19 @@ import kotlinx.coroutines.withContext
     }
 }
 
-@Composable private fun DownloadRow(job:DownloadJob,onRetry:()->Unit,onRemove:()->Unit) {
+@Composable private fun DownloadRow(job:DownloadJob,checking:Boolean,onRetry:()->Unit,onRemove:()->Unit) {
     Surface(Modifier.fillMaxWidth(),shape=MaterialTheme.shapes.large,color=MaterialTheme.colorScheme.surfaceContainer) {
         Column(Modifier.padding(start=16.dp,end=4.dp,top=12.dp,bottom=12.dp)) {
             Row(verticalAlignment=Alignment.CenterVertically) {
                 RemoteCover(job.cover,job.title,Modifier.width(36.dp).height(48.dp));Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(job.title,style=MaterialTheme.typography.titleSmall,maxLines=2,overflow=TextOverflow.Ellipsis)
-                    val detail=if(job.total>0 && job.state==DownloadJob.State.WORKING) " · ${bytes(job.bytes)} of ${bytes(job.total)}" else ""
-                    Text(job.message+detail,style=MaterialTheme.typography.bodySmall,color=if(job.state==DownloadJob.State.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                    val detail=if(job.total>0 && job.state==DownloadJob.State.WORKING) " · ${DownloadPlan.size(job.bytes)} of ${DownloadPlan.size(job.total)}" else ""
+                    if(checking) Text("Checking for seeders…",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    else Text(job.message+detail,style=MaterialTheme.typography.bodySmall,color=if(job.state==DownloadJob.State.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                if(job.state==DownloadJob.State.FAILED) IconAction(Icons.Rounded.Refresh,"Retry download",onRetry,tint=MaterialTheme.colorScheme.primary)
+                if(checking) CircularProgressIndicator(Modifier.padding(horizontal=12.dp).size(20.dp),strokeWidth=2.dp)
+                else if(job.state==DownloadJob.State.FAILED) IconAction(Icons.Rounded.Refresh,"Retry download",onRetry,tint=MaterialTheme.colorScheme.primary)
                 if(job.active) TextButton(onRemove) { Text("Cancel") } else IconAction(Icons.Rounded.DeleteOutline,"Remove from downloads",onRemove,tint=MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if(job.state==DownloadJob.State.WORKING) Box(Modifier.padding(top=10.dp,end=12.dp)) { if(job.progress>=0) ProgressBar(job.progress) else LinearProgressIndicator(Modifier.fillMaxWidth().height(4.dp).clip(MaterialTheme.shapes.extraLarge)) }
@@ -169,9 +171,4 @@ private object RemoteImages { val cache=object:LruCache<String,ImageBitmap>(24*1
     }
     if(image!=null) Image(image!!,"Cover of $title",modifier.clip(MaterialTheme.shapes.small),contentScale=ContentScale.Crop)
     else Cover(Book(title=title.substringBefore(" - ").ifBlank { title },author=title.substringAfter(" - ","")),modifier,large)
-}
-private fun bytes(value:Long):String = when {
-    value>=1L shl 30 -> "%.1f GB".format(value/(1L shl 30).toDouble())
-    value>=1L shl 20 -> "%.0f MB".format(value/(1L shl 20).toDouble())
-    else -> "${value/1024} KB"
 }

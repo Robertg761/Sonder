@@ -2,8 +2,15 @@ package app.sonder.download
 
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.os.StatFs
 import android.os.SystemClock
+import android.os.storage.StorageManager
+import android.provider.DocumentsContract
 import androidx.core.content.ContextCompat
 import androidx.documentfile.provider.DocumentFile
 import app.sonder.data.Importer
@@ -44,7 +51,14 @@ class Downloads(private val context:Context,private val importer:Importer) {
         /** How long [preflight] watches a new torrent for signs that anyone is sharing it. */
         const val CHECK_TIME=60_000L
         const val NO_SEEDERS="Real-Debrid couldn't find anyone sharing this upload right now, so it won't download. Try again another time, or pick another upload."
+        /** How long a step keeps retrying dropped connections and Real-Debrid hiccups while the phone is online. */
+        const val PATIENCE=10*60_000L
+        /** How long a download waits for the phone to come back online. */
+        const val OFFLINE_WAIT=30*60_000L
+        /** Room left free on the phone after a download, so it doesn't fill the storage to the last byte. */
+        const val SPARE=100L*1024*1024
     }
+    private val connectivity=context.getSystemService(ConnectivityManager::class.java)
     private val prefs=context.getSharedPreferences("downloads",Context.MODE_PRIVATE)
     private val settingsState=MutableStateFlow(DownloadSettings(prefs.getString("token","").orEmpty(),prefs.getString("folder","").orEmpty(),prefs.getString("site",AudioBookBay.DEFAULT_SITE).orEmpty()))
     val settings=settingsState.asStateFlow()
@@ -77,9 +91,7 @@ class Downloads(private val context:Context,private val importer:Importer) {
             val existing=jobState.value.firstOrNull { it.hash==details.hash }
             blocked(details.hash)?.let { message -> if(torrent.isNotBlank() && torrent!=existing?.torrent) forget(torrent);return message }
             if(existing!=null) {
-                // A failed download starts again, moving to the checked torrent if it has a new one.
-                if(torrent.isNotBlank() && torrent!=existing.torrent) { if(existing.torrent.isNotBlank()) forget(existing.torrent);update(existing.id) { it.copy(torrent=torrent) } }
-                retry(existing.id);return null
+                retry(existing.id,torrent);return null
             }
             publish(listOf(DownloadJob(title=details.title,author=details.author,page=details.url,hash=details.hash,magnet=details.magnet,cover=details.cover,torrent=torrent))+jobState.value)
         }
@@ -91,19 +103,23 @@ class Downloads(private val context:Context,private val importer:Importer) {
      * torrent for [enqueue]. Throws with a message for the person when the upload can't download now. The torrent
      * is deleted then, and when the check is cancelled, so a failed check leaves nothing running on the account.
      */
-    suspend fun preflight(details:AudioBookBay.Details):String = withContext(Dispatchers.IO) {
-        val token=settingsState.value.token
-        check(token.isNotBlank()) { "Add your Real-Debrid API token in Settings." }
-        val rd=RealDebrid(token)
-        val earlier=jobState.value.firstOrNull { it.hash==details.hash && !it.active }?.torrent.orEmpty()
-        val id=earlier.takeIf { it.isNotBlank() && runCatching { rd.torrent(it) }.isSuccess } ?: rd.addMagnet(details.magnet)
+    suspend fun preflight(hash:String,magnet:String):String = withContext(Dispatchers.IO) {
+        val config=settingsState.value
+        check(config.token.isNotBlank()) { "Add your Real-Debrid API token in Settings." }
+        val rd=RealDebrid(config.token)
+        val earlier=jobState.value.firstOrNull { it.hash==hash && !it.active }?.torrent.orEmpty()
+        val id=earlier.takeIf { it.isNotBlank() && runCatching { rd.torrent(it) }.isSuccess } ?: rd.addMagnet(magnet)
         var usable=false
         try {
             val started=SystemClock.elapsedRealtime();var selected=0L
             while(SystemClock.elapsedRealtime()-started<CHECK_TIME) {
                 val t=rd.torrent(id)
                 when {
-                    RealDebrid.alive(t) -> { usable=true;return@withContext id }
+                    RealDebrid.alive(t) -> {
+                        // Partial files from an earlier attempt are ignored here; the download itself counts them.
+                        ensureSpace(config.folder,DownloadPlan.wanted(t.files.filter { it.selected }.ifEmpty { t.files }).sumOf { it.bytes })
+                        usable=true;return@withContext id
+                    }
                     t.status in RealDebrid.failed -> error(RealDebrid.describe(t.status))
                     t.status=="waiting_files_selection" -> {
                         val wanted=DownloadPlan.wanted(t.files)
@@ -124,7 +140,67 @@ class Downloads(private val context:Context,private val importer:Importer) {
         val token=settingsState.value.token
         if(token.isNotBlank()) scope.launch { runCatching { RealDebrid(token).delete(torrent) }.onFailure { android.util.Log.w("Sonder","Could not delete Real-Debrid torrent",it) } }
     }
-    fun retry(id:String) { update(id) { if(it.active) it else it.copy(state=DownloadJob.State.QUEUED,message="Waiting to start",progress=-1f) };start() }
+    /** Starts a stopped download again, moving it to the [torrent] that [preflight] checked when there is one. */
+    fun retry(id:String,torrent:String="") {
+        val kept=synchronized(lock) {
+            val job=jobState.value.firstOrNull { it.id==id } ?: return@synchronized false
+            if(job.active) return@synchronized torrent==job.torrent
+            if(torrent.isNotBlank() && torrent!=job.torrent && job.torrent.isNotBlank()) forget(job.torrent)
+            update(id) { it.copy(state=DownloadJob.State.QUEUED,message="Waiting to start",progress=-1f,torrent=torrent.ifBlank { it.torrent }) }
+            true
+        }
+        // The download was removed or is already running while the check ran, so its torrent isn't needed.
+        if(!kept && torrent.isNotBlank()) forget(torrent)
+        start()
+    }
+    /**
+     * Fails when the storage holding [folder] can't take [need] more bytes and still keep [SPARE] free.
+     * Storage Android can't measure, like a cloud provider, passes.
+     */
+    private fun ensureSpace(folder:String,need:Long) {
+        if(need<=0 || folder.isBlank()) return
+        val free=freeSpace(Uri.parse(folder)) ?: return
+        check(free>=need+SPARE) { "This book needs ${DownloadPlan.size(need)}, but only ${DownloadPlan.size(free)} is free where downloads are saved. Free up some space, then try again." }
+    }
+    /** Free bytes on the phone storage or SD card behind a download folder, or null when Android can't tell. */
+    private fun freeSpace(tree:Uri):Long? = runCatching {
+        if(tree.authority!="com.android.externalstorage.documents") return null
+        val volume=DocumentsContract.getTreeDocumentId(tree).substringBefore(':')
+        val dir=if(volume.equals("primary",true)) Environment.getExternalStorageDirectory()
+            else if(Build.VERSION.SDK_INT>=30) context.getSystemService(StorageManager::class.java).storageVolumes.firstOrNull { it.uuid.equals(volume,true) }?.directory else null
+        dir?.let { StatFs(it.path).availableBytes }
+    }.getOrNull()
+    private fun online()=connectivity?.activeNetwork?.let { connectivity.getNetworkCapabilities(it)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) }==true
+    /**
+     * Runs one network step of a download, riding out trouble that passes. While the phone is offline it waits up to
+     * [OFFLINE_WAIT] for a connection; dropped connections and Real-Debrid hiccups are retried with growing pauses
+     * for up to [PATIENCE]. Anything else, like a refused request, fails at once.
+     */
+    private suspend fun <T> patiently(status:(String)->Unit,step:suspend ()->T):T {
+        var trouble=0L;var pause=5_000L
+        while(true) {
+            try { return step() }
+            catch(e:CancellationException) { throw e }
+            catch(e:Exception) {
+                if(e is Problem || !RealDebrid.temporary(e)) throw e
+                android.util.Log.w("Sonder","Download step failed; trying again",e)
+                if(!online()) {
+                    status("Waiting for an internet connection")
+                    val since=SystemClock.elapsedRealtime()
+                    while(!online()) {
+                        if(SystemClock.elapsedRealtime()-since>OFFLINE_WAIT) throw Problem("No internet connection for half an hour. Tap Retry when you're back online.")
+                        delay(3000)
+                    }
+                    trouble=0L;pause=5_000L;continue
+                }
+                val now=SystemClock.elapsedRealtime()
+                if(trouble==0L) trouble=now
+                if(now-trouble>PATIENCE) throw e
+                status("Connection trouble. Trying again in ${pause/1000} seconds")
+                delay(pause);pause=(pause*2).coerceAtMost(60_000L)
+            }
+        }
+    }
     /**
      * Stops and forgets a download. Unfinished downloads also lose their partial files and their Real-Debrid
      * torrent, so the transfer stops using the account. Finished books stay in the library.
@@ -214,13 +290,16 @@ class Downloads(private val context:Context,private val importer:Importer) {
             check(planned.isNotEmpty()) { "Real-Debrid didn't return any audio for this upload." }
             val dir=folder(root,id)
             val total=planned.sumOf { it.second?.bytes ?: 0L }.takeIf { planned.all { p -> p.second!=null } } ?: 0L
+            // Files a stopped attempt already saved resume, so only the rest needs room.
+            if(total>0) ensureSpace(config.folder,total-dir.listFiles().sumOf { it.length() })
+            val say:(String)->Unit={ status(it) }
             val used=names.values.map { it.lowercase() }.toMutableSet()
             var done=0L
             for((index,item) in planned.withIndex()) {
                 val (link,file)=item
                 val label="Downloading ${index+1} of ${planned.size}"
                 status(label,if(total>0) done.toFloat()/total else -1f,done,total)
-                val direct=rd.unrestrict(link)
+                val direct=patiently(say) { withContext(Dispatchers.IO) { rd.unrestrict(link) } }
                 val name=if(file!=null) names.getValue(file.id) else {
                     val ext=DownloadPlan.extension(direct.name)
                     check(ext !in DownloadPlan.archives) { "Real-Debrid packed these files into an archive, which Sonder can't open." }
@@ -229,7 +308,7 @@ class Downloads(private val context:Context,private val importer:Importer) {
                 }
                 val size=direct.size.takeIf { it>0 } ?: file?.bytes ?: 0L
                 var last=0L
-                fetch(direct.url,dir,name,size) { written ->
+                fetch(direct.url,dir,name,size,say) { written ->
                     val now=SystemClock.elapsedRealtime()
                     if(now-last>500) { last=now;status(label,if(total>0) (done+written).toFloat()/total else -1f,done+written,total) }
                 }
@@ -252,11 +331,12 @@ class Downloads(private val context:Context,private val importer:Importer) {
     private suspend fun cached(rd:RealDebrid,id:String,status:(String,Float,Long,Long)->Any?):RealDebrid.Torrent {
         // A torrent that sits in one state with no progress for too long is stuck, whatever the state is.
         var seen="";var changed=SystemClock.elapsedRealtime();var selected=0L
+        val say:(String)->Unit={ status(it,-1f,0,0) }
         while(true) {
             currentCoroutineContext().ensureActive()
             var job=find(id)
-            if(job.torrent.isBlank()) { status("Sending to Real-Debrid",-1f,0,0);val torrent=withContext(Dispatchers.IO) { rd.addMagnet(job.magnet) };job=update(id) { it.copy(torrent=torrent) } ?: run { runCatching { rd.delete(torrent) };throw CancellationException("Download removed") } }
-            val t=try { withContext(Dispatchers.IO) { rd.torrent(job.torrent) } }
+            if(job.torrent.isBlank()) { status("Sending to Real-Debrid",-1f,0,0);val torrent=patiently(say) { withContext(Dispatchers.IO) { rd.addMagnet(job.magnet) } };job=update(id) { it.copy(torrent=torrent) } ?: run { runCatching { rd.delete(torrent) };throw CancellationException("Download removed") } }
+            val t=try { patiently(say) { withContext(Dispatchers.IO) { rd.torrent(job.torrent) } } }
                 catch(e:RealDebrid.Error) { if(e.status==404) { update(id) { it.copy(torrent="") };seen="";changed=SystemClock.elapsedRealtime();selected=0L;continue } else throw e }
             val now=SystemClock.elapsedRealtime()
             if("${t.status}:${t.progress}"!=seen) { seen="${t.status}:${t.progress}";changed=now }
@@ -270,7 +350,7 @@ class Downloads(private val context:Context,private val importer:Importer) {
                     check(now-changed<5*60*1000L) { "Real-Debrid didn't start this torrent after Sonder chose its ${wanted.size} files. Remove the download and try again, or try another upload." }
                     // Some uploads stay waiting after a partial selection, so after 45 seconds every file is selected.
                     // Only the wanted files are still downloaded to the phone; the rest stay on Real-Debrid.
-                    if(selected==0L || now-selected>45_000) { withContext(Dispatchers.IO) { rd.select(t.id,if(selected==0L) wanted.map { it.id } else null) };selected=now }
+                    if(selected==0L || now-selected>45_000) { patiently(say) { withContext(Dispatchers.IO) { rd.select(t.id,if(selected==0L) wanted.map { it.id } else null) } };selected=now }
                     status("Asking Real-Debrid to fetch ${wanted.size} ${if(wanted.size==1) "file" else "files"}"+if(waited>0) " · $waited min" else "",-1f,0,0)
                 }
                 else -> {
@@ -296,16 +376,10 @@ class Downloads(private val context:Context,private val importer:Importer) {
         return dir
     }
 
-    /** Streams one file into the folder. Partial files resume with a range request; network drops retry a few times. */
-    private suspend fun fetch(url:String,dir:DocumentFile,name:String,size:Long,onProgress:(Long)->Unit) = withContext(Dispatchers.IO) {
-        var attempt=0
-        while(true) {
-            try { fetchOnce(url,dir,name,size,onProgress);return@withContext }
-            catch(e:IOException) {
-                if(++attempt>=3) throw if(e is Problem) e else IOException("The connection dropped while downloading. Tap Retry to continue.",e)
-                delay(5000L*attempt)
-            }
-        }
+    /** Streams one file into the folder. Partial files resume with a range request, so a dropped connection picks up where it stopped. */
+    private suspend fun fetch(url:String,dir:DocumentFile,name:String,size:Long,status:(String)->Unit,onProgress:(Long)->Unit) = withContext(Dispatchers.IO) {
+        try { patiently(status) { fetchOnce(url,dir,name,size,onProgress) } }
+        catch(e:IOException) { throw if(e is Problem) e else IOException("The connection kept dropping while downloading. Tap Retry to continue.",e) }
     }
     private suspend fun fetchOnce(url:String,dir:DocumentFile,name:String,size:Long,onProgress:(Long)->Unit) {
         var file=dir.findFile(name)
