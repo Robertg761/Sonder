@@ -19,7 +19,7 @@ import kotlinx.coroutines.*
 
 /** Keeps Sonder running while audiobooks download, with a progress notification. */
 class DownloadService:Service() {
-    private companion object { const val CHANNEL="downloads";const val PROGRESS=41 }
+    private companion object { const val CHANNEL="downloads";const val PROGRESS=41;const val CANCEL="app.sonder.download.CANCEL" }
     private val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate)
     private val downloads get()=(application as SonderApp).downloads
     private val manager get()=getSystemService(NotificationManager::class.java)
@@ -34,6 +34,8 @@ class DownloadService:Service() {
         scope.launch { downloads.jobs.collect { render(it);delay(800) } }
     }
     override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int {
+        // The progress notification's Cancel button. The service still starts in the foreground as Android requires, then stops if nothing is left.
+        if(intent?.action==CANCEL) intent.getStringExtra("id")?.let(downloads::remove)
         ServiceCompat.startForeground(this,PROGRESS,progress(downloads.jobs.value),if(Build.VERSION.SDK_INT>=29) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0)
         launchWorker()
         return START_NOT_STICKY
@@ -63,12 +65,14 @@ class DownloadService:Service() {
     // MainActivity carries Media3's UnstableApi marker; opening it from a notification uses no Media3 API.
     @androidx.annotation.OptIn(markerClass=[androidx.media3.common.util.UnstableApi::class])
     private fun open()=PendingIntent.getActivity(this,0,Intent(this,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+    private fun cancel(job:DownloadJob)=PendingIntent.getForegroundService(this,job.id.hashCode(),Intent(this,DownloadService::class.java).setAction(CANCEL).putExtra("id",job.id),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     private fun progress(jobs:List<DownloadJob>):android.app.Notification {
         val job=jobs.firstOrNull { it.state==DownloadJob.State.WORKING } ?: jobs.lastOrNull { it.state==DownloadJob.State.QUEUED }
         val waiting=jobs.count { it.state==DownloadJob.State.QUEUED }-if(job?.state==DownloadJob.State.QUEUED) 1 else 0
         return NotificationCompat.Builder(this,CHANNEL).setSmallIcon(R.drawable.ic_stat_sonder).setContentIntent(open()).setOngoing(true).setOnlyAlertOnce(true).setSilent(true)
             .setContentTitle(job?.title ?: "Preparing downloads").setContentText(job?.message.orEmpty()+if(waiting>0) " · $waiting more waiting" else "")
-            .setProgress(100,((job?.progress ?: 0f)*100).toInt().coerceIn(0,100),job==null || job.progress<0).build()
+            .setProgress(100,((job?.progress ?: 0f)*100).toInt().coerceIn(0,100),job==null || job.progress<0)
+            .apply { if(job!=null) addAction(R.drawable.ic_stat_sonder,"Cancel",cancel(job)) }.build()
     }
     private fun finished(title:String,text:String)=NotificationCompat.Builder(this,CHANNEL).setSmallIcon(R.drawable.ic_stat_sonder).setContentIntent(open()).setAutoCancel(true)
         .setContentTitle(title).setContentText(text).build()

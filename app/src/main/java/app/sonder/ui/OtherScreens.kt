@@ -4,12 +4,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -95,21 +97,31 @@ import java.util.Locale
     val update=vm.preferences::update
     LazyColumn(contentPadding=PaddingValues(start=20.dp,end=20.dp,top=4.dp,bottom=32.dp),verticalArrangement=Arrangement.spacedBy(20.dp)) {
         item { SettingsGroup("Appearance") { Row(Modifier.padding(16.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)) { listOf("System","Light","Dark").forEach { t -> ChoiceChip(t,settings.theme==t,{ update(settings.copy(theme=t)) }) } } } }
-        item { SettingsGroup("Playback") { SettingSwitch("Skip silence","Skip quiet gaps in narration",settings.skipSilence,{ update(settings.copy(skipSilence=it)) });SettingSwitch("Preserve voice pitch","Keep narration natural at faster speeds",settings.preservePitch,{ update(settings.copy(preservePitch=it)) });SettingAction("Rewind button","${settings.rewind} seconds",Icons.Rounded.Replay,{ option="Rewind" });SettingAction("Forward button","${settings.forward} seconds",Icons.Rounded.Forward30,{ option="Forward" });SettingAction("Smart rewind",if(settings.smartRewind==0) "Off" else "${settings.smartRewind} seconds when opening a book",Icons.Rounded.History,{ option="Smart rewind" }) } }
+        item { SettingsGroup("Playback") { SettingSwitch("Skip silence","Skip quiet gaps in narration",Icons.Rounded.GraphicEq,settings.skipSilence,{ update(settings.copy(skipSilence=it)) });SettingSwitch("Preserve voice pitch","Keep narration natural at faster speeds",Icons.Rounded.RecordVoiceOver,settings.preservePitch,{ update(settings.copy(preservePitch=it)) });SettingAction("Rewind button","${settings.rewind} seconds",Icons.Rounded.Replay,{ option="Rewind" });SettingAction("Forward button","${settings.forward} seconds",Icons.Rounded.Forward30,{ option="Forward" });SettingAction("Smart rewind",if(settings.smartRewind==0) "Off" else "${settings.smartRewind} seconds when opening a book",Icons.Rounded.History,{ option="Smart rewind" }) } }
         item { SettingsGroup("Listening goal") { SettingAction("Daily goal","${settings.dailyGoal} minutes",Icons.Rounded.Flag,{ option="Daily goal" }) } }
         item { SettingsGroup("Library & files") {
             SettingAction("Add audio files","Import files from your phone or storage provider",Icons.Rounded.AudioFile,onFiles);SettingAction("Add a folder","Group audio tracks and read chapter files",Icons.Rounded.FolderOpen,onFolder);SettingAction("Scan device for audiobooks","Find shared audio without choosing a folder",Icons.Rounded.Search,onScan);if(library.folders.isNotEmpty()) SettingAction("Rescan saved folders","Add new files without importing duplicates",Icons.Rounded.Refresh,vm::rescan)
-            library.folders.forEach { uri -> Row(Modifier.fillMaxWidth().padding(start=16.dp,end=4.dp,top=4.dp,bottom=4.dp),verticalAlignment=Alignment.CenterVertically) { Icon(Icons.Rounded.Folder,null,tint=MaterialTheme.colorScheme.onSurfaceVariant);Spacer(Modifier.width(16.dp));Text(android.net.Uri.decode(uri.substringAfterLast('/')),modifier=Modifier.weight(1f),style=MaterialTheme.typography.bodySmall,maxLines=2,overflow=TextOverflow.Ellipsis);IconAction(Icons.Rounded.Close,"Stop watching this folder",{ vm.forgetFolder(uri) },tint=MaterialTheme.colorScheme.onSurfaceVariant) } }
+            library.folders.forEach { uri -> Row(Modifier.fillMaxWidth().padding(start=16.dp,end=4.dp,top=4.dp,bottom=4.dp),verticalAlignment=Alignment.CenterVertically) { Icon(Icons.Rounded.Folder,null,tint=MaterialTheme.colorScheme.onSurfaceVariant);Spacer(Modifier.width(16.dp));Text(folderName(uri),modifier=Modifier.weight(1f),style=MaterialTheme.typography.bodySmall,maxLines=2,overflow=TextOverflow.Ellipsis);IconAction(Icons.Rounded.Close,"Stop watching this folder",{ vm.forgetFolder(uri) },tint=MaterialTheme.colorScheme.onSurfaceVariant) } }
         } }
         item { SettingsGroup("AudioBookBay downloads",footer="Search words go to AudioBookBay. The book's magnet link goes to Real-Debrid, which downloads it for you. Your API token stays on this device.") {
-            val user=account.user
-            SettingAction("Real-Debrid",when { downloads.token.isBlank() -> "Add your API token to download books";account.checking -> "Checking your account…";account.error.isNotBlank() -> account.error;user==null -> "Token saved";!user.premium -> "${user.name} · Free account. Torrents need premium.";else -> "${user.name} · Premium until ${user.expiration.take(10)}" },Icons.Rounded.Key,{ tokenOpen=true })
-            SettingAction("Download folder",if(downloads.folder.isBlank()) "Choose where downloaded books are saved" else android.net.Uri.decode(downloads.folder.substringAfterLast('/')).substringAfter(':').ifBlank { "Internal storage" },Icons.Rounded.CreateNewFolder,onDownloadFolder)
+            val user=account.user;val days=user?.daysLeft()
+            // Problems that stop downloads are shown in the error color: a bad token, a free account, or premium about to end.
+            val (status,warning)=when {
+                downloads.token.isBlank() -> "Add your API token to download books" to false
+                account.checking -> "Checking your account…" to false
+                account.error.isNotBlank() -> account.error to true
+                user==null -> "Token saved" to false
+                !user.premium -> "${user.name} · Free account. Downloads need Real-Debrid premium." to true
+                days!=null && days<=7 -> "${user.name} · Premium ends ${when(days) { in Long.MIN_VALUE..0L -> "today";1L -> "tomorrow";else -> "in $days days" }}. Renew at real-debrid.com." to true
+                else -> "${user.name} · Premium until ${premiumDate(user.expiration)}" to false
+            }
+            SettingAction("Real-Debrid",status,Icons.Rounded.Key,{ tokenOpen=true },warning=warning)
+            SettingAction("Download folder",if(downloads.folder.isBlank()) "Choose where downloaded books are saved" else folderName(downloads.folder),Icons.Rounded.CreateNewFolder,onDownloadFolder)
             SettingAction("AudioBookBay address",downloads.site.removePrefix("https://"),Icons.Rounded.Language,{ siteOpen=true })
             if(downloads.ready) SettingAction("Find audiobooks","Search and download into your library",Icons.Rounded.TravelExplore,onFind)
         } }
         item { SettingsGroup("Backup & restore",footer="Backups include reading history, but do not contain audio or cover images. Reading records restore without media. Import original files to restore playback data. Folder permissions must be granted again on a new phone.") { SettingAction("Export library backup","Save playback data, bookmarks, and reading history",Icons.Rounded.FileUpload,onExport);SettingAction("Restore a backup","Restore saved information for imported books",Icons.Rounded.FileDownload,{ restoreConfirm=true }) } }
-        item { SettingsGroup("App updates",footer=updater.message) { SettingSwitch("Automatic update checks","Check GitHub when you open Sonder, at most once a day",updater.automatic,vm.updater::automatic);SettingAction(if(updater.checking) "Checking for updates…" else "Check for updates","Installed version ${app.sonder.BuildConfig.VERSION_NAME}",Icons.Rounded.SystemUpdate,{ vm.updater.check() });if(updater.available!=null) SettingAction("Update to ${updater.available!!.version}",if(updater.phase=="ready") "Downloaded and ready to install" else "View release notes and download",Icons.Rounded.Download,onUpdate) } }
+        item { SettingsGroup("App updates",footer=updater.message) { SettingSwitch("Automatic update checks","Check GitHub when you open Sonder, at most once a day",Icons.Rounded.Autorenew,updater.automatic,vm.updater::automatic);SettingAction(if(updater.checking) "Checking for updates…" else "Check for updates","Installed version ${app.sonder.BuildConfig.VERSION_NAME}",Icons.Rounded.SystemUpdate,{ vm.updater.check() });if(updater.available!=null) SettingAction("Update to ${updater.available!!.version}",if(updater.phase=="ready") "Downloaded and ready to install" else "View release notes and download",Icons.Rounded.Download,onUpdate) } }
         item { SettingsGroup("About Sonder") {
             Column(Modifier.padding(16.dp)) {
                 Row(verticalAlignment=Alignment.CenterVertically) { SonderMark(Modifier.size(52.dp));Spacer(Modifier.width(14.dp));Column { Text("Sonder",style=MaterialTheme.typography.titleLarge);Text("Version ${app.sonder.BuildConfig.VERSION_NAME}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant) } };Spacer(Modifier.height(14.dp));Text("Your books stay on your device. Sonder has no account, advertising, or analytics. Internet access is used to check and download updates from GitHub and, if you set up downloads, to search AudioBookBay and download through Real-Debrid.",style=MaterialTheme.typography.bodyMedium)
@@ -132,13 +144,19 @@ import java.util.Locale
         } } },confirmButton={},dismissButton={ TextButton({ option="" }) { Text("Cancel") } })
     }
     if(tokenOpen) {
-        var token by remember { mutableStateOf("") }
+        var token by remember { mutableStateOf("") };var reveal by remember { mutableStateOf(false) }
         val uri=androidx.compose.ui.platform.LocalUriHandler.current
+        val clipboard=androidx.compose.ui.platform.LocalClipboard.current;val context=LocalContext.current;val scope=rememberCoroutineScope()
         AlertDialog(onDismissRequest={ tokenOpen=false },title={ Text("Real-Debrid API token") },
             text={ Column {
                 Text("Sign in at real-debrid.com, open your API token page, and paste the token here. Downloading torrents needs a premium account.",style=MaterialTheme.typography.bodyMedium)
                 TextButton({ uri.openUri("https://real-debrid.com/apitoken") },contentPadding=PaddingValues(0.dp)) { Text("Open real-debrid.com/apitoken") }
-                OutlinedTextField(token,{ token=it.trim() },label={ Text(if(downloads.token.isBlank()) "API token" else "New API token") },singleLine=true,visualTransformation=androidx.compose.ui.text.input.PasswordVisualTransformation(),modifier=Modifier.fillMaxWidth())
+                OutlinedTextField(token,{ token=it.trim() },label={ Text(if(downloads.token.isBlank()) "API token" else "New API token") },singleLine=true,
+                    visualTransformation=if(reveal) androidx.compose.ui.text.input.VisualTransformation.None else androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    trailingIcon={ Row {
+                        if(token.isNotEmpty()) IconButton({ reveal=!reveal }) { Icon(if(reveal) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,if(reveal) "Hide token" else "Show token") }
+                        IconButton({ scope.launch { clipboard.getClipEntry()?.clipData?.takeIf { it.itemCount>0 }?.getItemAt(0)?.coerceToText(context)?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let { token=it } } }) { Icon(Icons.Rounded.ContentPaste,"Paste token") }
+                    } },modifier=Modifier.fillMaxWidth())
                 if(account.checking) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top=12.dp))
                 if(account.error.isNotBlank() && token.isNotBlank()) Text(account.error,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall,modifier=Modifier.padding(top=8.dp))
             } },
@@ -161,5 +179,10 @@ import java.util.Locale
         if(footer.isNotBlank()) Text(footer,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.padding(start=4.dp,end=4.dp,top=8.dp))
     }
 }
-@Composable private fun SettingSwitch(title:String,subtitle:String,checked:Boolean,onChecked:(Boolean)->Unit) { Row(Modifier.fillMaxWidth().clickable { onChecked(!checked) }.padding(horizontal=16.dp,vertical=12.dp),verticalAlignment=Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(title,style=MaterialTheme.typography.titleSmall);Text(subtitle,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant) };Spacer(Modifier.width(12.dp));Switch(checked,onChecked) } }
-@Composable private fun SettingAction(title:String,subtitle:String,icon:androidx.compose.ui.graphics.vector.ImageVector,onClick:()->Unit) { Row(Modifier.fillMaxWidth().clickable(onClick=onClick).padding(horizontal=16.dp,vertical=12.dp),verticalAlignment=Alignment.CenterVertically) { Icon(icon,null,tint=MaterialTheme.colorScheme.primary,modifier=Modifier.size(22.dp));Spacer(Modifier.width(16.dp));Column(Modifier.weight(1f)) { Text(title,style=MaterialTheme.typography.titleSmall);Text(subtitle,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant) };Spacer(Modifier.width(8.dp));Icon(Icons.Rounded.ChevronRight,null,tint=MaterialTheme.colorScheme.onSurfaceVariant) } }
+// The whole row is one switch, so screen readers announce a single control with its title.
+@Composable private fun SettingSwitch(title:String,subtitle:String,icon:androidx.compose.ui.graphics.vector.ImageVector,checked:Boolean,onChecked:(Boolean)->Unit) { Row(Modifier.fillMaxWidth().toggleable(value=checked,role=Role.Switch,onValueChange=onChecked).padding(horizontal=16.dp,vertical=12.dp),verticalAlignment=Alignment.CenterVertically) { Icon(icon,null,tint=MaterialTheme.colorScheme.primary,modifier=Modifier.size(22.dp));Spacer(Modifier.width(16.dp));Column(Modifier.weight(1f)) { Text(title,style=MaterialTheme.typography.titleSmall);Text(subtitle,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant) };Spacer(Modifier.width(12.dp));Switch(checked,onCheckedChange=null) } }
+@Composable private fun SettingAction(title:String,subtitle:String,icon:androidx.compose.ui.graphics.vector.ImageVector,onClick:()->Unit,warning:Boolean=false) { Row(Modifier.fillMaxWidth().clickable(onClick=onClick).padding(horizontal=16.dp,vertical=12.dp),verticalAlignment=Alignment.CenterVertically) { Icon(icon,null,tint=MaterialTheme.colorScheme.primary,modifier=Modifier.size(22.dp));Spacer(Modifier.width(16.dp));Column(Modifier.weight(1f)) { Text(title,style=MaterialTheme.typography.titleSmall);Text(subtitle,style=MaterialTheme.typography.bodySmall,color=if(warning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant) };Spacer(Modifier.width(8.dp));Icon(Icons.Rounded.ChevronRight,null,tint=MaterialTheme.colorScheme.onSurfaceVariant) } }
+/** A folder from its tree URI as people know it: "Audiobooks" rather than "primary:Audiobooks". */
+internal fun folderName(uri:String)=android.net.Uri.decode(uri.substringAfterLast('/')).substringAfter(':').ifBlank { "Internal storage" }
+/** Real-Debrid's expiry timestamp as a local date, like "Dec 1, 2026". */
+private fun premiumDate(expiration:String)=runCatching { java.time.Instant.parse(expiration).atZone(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.MEDIUM)) }.getOrDefault(expiration.take(10))

@@ -23,13 +23,15 @@ import app.sonder.media.PlaybackService
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import java.io.File
 
 data class DeviceScanState(val running:Boolean=false,val completed:Boolean=false,val result:DeviceScanner.Result=DeviceScanner.Result(emptyList()),val error:String="")
 data class UndoNotice(val message:String,val undo:()->Unit)
 data class Playback(val bookId:Long=0,val position:Long=0,val playing:Boolean=false,val buffering:Boolean=false,val speed:Float=1f,val error:String="")
 data class FindState(val query:String="",val loading:Boolean=false,val results:List<AudioBookBay.Listing> = emptyList(),val plan:AudioBookBay.Plan?=null,val page:Int=0,val next:Boolean=false,val error:String="",val searched:Boolean=false)
-data class FindDetails(val listing:AudioBookBay.Listing,val details:AudioBookBay.Details?=null,val error:String="")
+/** [problem] explains why Real-Debrid can't download this book right now. */
+data class FindDetails(val listing:AudioBookBay.Listing,val details:AudioBookBay.Details?=null,val error:String="",val problem:String="")
 /** Shared files Android must confirm before deleting, waiting for the activity to show the system dialog. */
 data class PendingDelete(val book:Book,val sender:android.content.IntentSender,val deleted:Int,val confirm:Int,val failed:Int,val launched:Boolean=false)
 data class AccountState(val checking:Boolean=false,val user:RealDebrid.User?=null,val error:String="")
@@ -277,10 +279,34 @@ class LibraryViewModel(application:Application,private val saved:androidx.lifecy
         }
     }
     fun closeListing() { detailJob?.cancel();detailState.value=null }
-    fun download(details:AudioBookBay.Details) {
-        runCatching { downloads.enqueue(details) }.onSuccess { notice(it ?: "Downloading ${details.title}. It will appear in your library when it's ready.") }
-            .onFailure { android.util.Log.e("Sonder","Could not start download",it);notice("Couldn't start the download. Open Sonder and try again.") }
+    private val checkState=MutableStateFlow(emptySet<String>())
+    /** Hashes of uploads being checked with Real-Debrid before they download. */
+    val checking=checkState.asStateFlow()
+    /**
+     * Checks with Real-Debrid that someone is sharing the upload, then queues it. An upload that can't download now
+     * gets an explanation instead, on the book if it's still open. The check carries on if the book is closed.
+     */
+    fun download(details:AudioBookBay.Details) = checked(details.hash,details.title,details.magnet) { downloads.enqueue(details,it) }
+    /** Retries a stopped download, checking for seeders first just like a new one. */
+    fun retry(job:app.sonder.download.DownloadJob) = checked(job.hash,job.title,job.magnet) { downloads.retry(job.id,it);null }
+    private fun checked(hash:String,title:String,magnet:String,queue:(String)->String?) {
+        downloads.blocked(hash)?.let { notice(it);return }
+        if(hash in checkState.value) return
+        checkState.update { it+hash }
+        viewModelScope.launch(errorHandler) {
+            try {
+                val torrent=downloads.preflight(hash,magnet)
+                runCatching { queue(torrent) }.onSuccess { notice(it ?: "Downloading $title. It will appear in your library when it's ready.") }
+                    .onFailure { android.util.Log.e("Sonder","Could not start download",it);notice("Couldn't start the download. Open Sonder and try again.") }
+            } catch(e:CancellationException) { throw e }
+            catch(e:Exception) {
+                android.util.Log.w("Sonder","Download check failed",e)
+                val message=e.message ?: "Couldn't check this upload with Real-Debrid. Try again."
+                if(detailState.value?.details?.hash==hash) detailState.update { it?.copy(problem=message) } else notice("$title: $message")
+            } finally { checkState.update { it-hash } }
+        }
     }
+    fun dismissProblem() { detailState.update { it?.copy(problem="") } }
     private val accountState=MutableStateFlow(AccountState())
     val account=accountState.asStateFlow()
     /** Checks a token with Real-Debrid. A blank token checks the saved one. Valid tokens are saved. */

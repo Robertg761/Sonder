@@ -32,6 +32,16 @@ class UpdateSheetTest {
         compose.onNodeWithText("Later").assertIsDisplayed()
         assertEquals(1,downloads)
     }
+    @Test fun releaseNotesShowFormattedMarkdown() {
+        val markdown=info.copy(notes="Sonder 1.7.3 checks books before downloading.\n\n## What's new\n- Checks for **seeders** first.\n- Cancel from the [notification](https://example.com).")
+        compose.setContent { SonderTheme("Light") { UpdateSheetContent(markdown,UpdateState(available=markdown),launching=false,error="",onDownload={},onCancel={},onInstall={},onDismiss={}) } }
+        compose.waitForIdle()
+        compose.screenshot("update-sheet-markdown")
+        compose.onNodeWithText("What's new").assertIsDisplayed()
+        compose.onNodeWithText("Checks for seeders first.").assertIsDisplayed()
+        compose.onNodeWithText("Cancel from the notification.").assertIsDisplayed()
+        compose.onNodeWithText("## What's new").assertDoesNotExist()
+    }
     @Test fun installButtonIsVisibleWhenReady() {
         var installs=0
         compose.setContent { SonderTheme("Dark") { UpdateSheetContent(info,UpdateState(available=info,phase="ready",progress=1f),launching=false,error="",onDownload={},onCancel={},onInstall={ installs++ },onDismiss={}) } }

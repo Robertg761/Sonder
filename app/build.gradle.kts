@@ -6,8 +6,8 @@ android {
         applicationId = "app.sonder.audiobooks"
         minSdk = 28
         targetSdk = 36
-        versionCode = providers.gradleProperty("appVersionCode").orNull?.toInt() ?: 10
-        versionName = providers.gradleProperty("appVersionName").orNull ?: "1.7.2"
+        versionCode = providers.gradleProperty("appVersionCode").orNull?.toInt() ?: 11
+        versionName = providers.gradleProperty("appVersionName").orNull ?: "1.7.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildTypes {

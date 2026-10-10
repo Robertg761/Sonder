@@ -8,6 +8,12 @@ object DownloadPlan {
     /** Never downloaded. Audiobook uploads don't need these, and fakes often contain them. */
     val risky=setOf("exe","msi","bat","cmd","scr","com","pif","lnk","vbs","js","jar","apk","ps1","dmg")
     val archives=setOf("zip","rar","7z","tar","gz")
+    /** A byte count for people, like "820 MB" or "1.4 GB". */
+    fun size(value:Long):String = when {
+        value>=1L shl 30 -> "%.1f GB".format(value/(1L shl 30).toDouble())
+        value>=1L shl 20 -> "%.0f MB".format(value/(1L shl 20).toDouble())
+        else -> "${value/1024} KB"
+    }
     fun extension(name:String)=name.substringAfterLast('/').substringAfterLast('.',"").lowercase()
     fun isAudio(name:String)=extension(name) in Importer.extensions
 
