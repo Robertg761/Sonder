@@ -322,7 +322,7 @@ class Downloads(private val context:Context,private val importer:Importer) {
                 }
                 done+=size
             }
-            if(archives.isNotEmpty()) unpack(dir,archives) { message,progress -> status(message,progress) }
+            if(archives.isNotEmpty()) unpack(config.folder,dir,archives) { message,progress -> status(message,progress) }
             update(id) { it.copy(state=DownloadJob.State.WORKING,message=IMPORTING,progress=1f,bytes=done,total=total,imported=true) }
             val result=importer.downloaded(dir.uri)
             val added=Regex("Imported (\\d+)").find(result.current)?.groupValues?.get(1)?.toIntOrNull() ?: 0
@@ -377,7 +377,7 @@ class Downloads(private val context:Context,private val importer:Importer) {
      * Unpacks the archives Real-Debrid packed an upload into, keeping and naming files as [DownloadPlan] would have
      * for the upload itself, then deletes the archives. Archives are read in order, so a split RAR unpacks as one.
      */
-    private suspend fun unpack(dir:DocumentFile,archives:List<String>,status:(String,Float)->Unit) = withContext(Dispatchers.IO) {
+    private suspend fun unpack(folder:String,dir:DocumentFile,archives:List<String>,status:(String,Float)->Unit) = withContext(Dispatchers.IO) {
         val running=currentCoroutineContext()
         val resolver=context.contentResolver
         fun each(visit:(Archive.Piece,java.io.InputStream)->Unit) = archives.forEach { name ->
@@ -397,6 +397,8 @@ class Downloads(private val context:Context,private val importer:Importer) {
         check(wanted.isNotEmpty()) { "Real-Debrid's archive has no audio files Sonder can play." }
         val names=DownloadPlan.names(wanted).mapKeys { files[it.key].path }
         val existing=dir.listFiles().filter { it.isFile }.associateBy { it.name.orEmpty() }.toMutableMap()
+        // The early check guessed from archive sizes; split or compressed archives can need more. Files an earlier attempt unpacked are rewritten.
+        ensureSpace(folder,wanted.sumOf { it.bytes }-names.values.sumOf { existing[it]?.length() ?: 0L })
         val total=wanted.sumOf { it.bytes }.coerceAtLeast(1L);var done=0L;var last=0L
         each { piece,data ->
             val name=names[piece.path] ?: return@each
