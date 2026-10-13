@@ -294,6 +294,7 @@ class Downloads(private val context:Context,private val importer:Importer) {
             if(total>0) ensureSpace(config.folder,total-dir.listFiles().sumOf { it.length() })
             val say:(String)->Unit={ status(it) }
             val used=names.values.map { it.lowercase() }.toMutableSet()
+            val archives=mutableListOf<String>()
             var done=0L
             for((index,item) in planned.withIndex()) {
                 val (link,file)=item
@@ -302,11 +303,18 @@ class Downloads(private val context:Context,private val importer:Importer) {
                 val direct=patiently(say) { withContext(Dispatchers.IO) { rd.unrestrict(link) } }
                 val name=if(file!=null) names.getValue(file.id) else {
                     val ext=DownloadPlan.extension(direct.name)
-                    check(ext !in DownloadPlan.archives) { "Real-Debrid packed these files into an archive, which Sonder can't open." }
-                    if(!DownloadPlan.isAudio(direct.name) && ext!="cue") continue
-                    DownloadPlan.unique(DownloadPlan.sanitize(direct.name),used)
+                    if(ext in DownloadPlan.archives) {
+                        // Real-Debrid sometimes packs an upload with many files into one archive. It is unpacked once everything is here.
+                        check(ext in Archive.formats) { "Real-Debrid packed these files into a .$ext archive, which Sonder can't open. Try another upload." }
+                        DownloadPlan.unique(DownloadPlan.sanitize(direct.name),used).also { archives+=it }
+                    } else {
+                        if(!DownloadPlan.isAudio(direct.name) && ext!="cue") continue
+                        DownloadPlan.unique(DownloadPlan.sanitize(direct.name),used)
+                    }
                 }
                 val size=direct.size.takeIf { it>0 } ?: file?.bytes ?: 0L
+                // Unpacking needs room for the archive and its contents until the archive is deleted.
+                if(name in archives) ensureSpace(config.folder,2*size-(dir.findFile(name)?.length() ?: 0L))
                 var last=0L
                 fetch(direct.url,dir,name,size,say) { written ->
                     val now=SystemClock.elapsedRealtime()
@@ -314,6 +322,7 @@ class Downloads(private val context:Context,private val importer:Importer) {
                 }
                 done+=size
             }
+            if(archives.isNotEmpty()) unpack(dir,archives) { message,progress -> status(message,progress) }
             update(id) { it.copy(state=DownloadJob.State.WORKING,message=IMPORTING,progress=1f,bytes=done,total=total,imported=true) }
             val result=importer.downloaded(dir.uri)
             val added=Regex("Imported (\\d+)").find(result.current)?.groupValues?.get(1)?.toIntOrNull() ?: 0
@@ -362,6 +371,44 @@ class Downloads(private val context:Context,private val importer:Importer) {
             }
             delay(if(t.status=="downloading") 5000 else 2500)
         }
+    }
+
+    /**
+     * Unpacks the archives Real-Debrid packed an upload into, keeping and naming files as [DownloadPlan] would have
+     * for the upload itself, then deletes the archives. Archives are read in order, so a split RAR unpacks as one.
+     */
+    private suspend fun unpack(dir:DocumentFile,archives:List<String>,status:(String,Float)->Unit) = withContext(Dispatchers.IO) {
+        val running=currentCoroutineContext()
+        val resolver=context.contentResolver
+        fun each(visit:(Archive.Piece,java.io.InputStream)->Unit) = archives.forEach { name ->
+            val file=dir.findFile(name) ?: throw Problem("$name is missing from the download folder. Tap Retry.")
+            (resolver.openInputStream(file.uri) ?: throw Problem("Couldn't open $name in the download folder.")).use { Archive.read(it,visit) }
+        }
+        fun copy(input:java.io.InputStream,output:java.io.OutputStream?,progress:(Int)->Unit={}):Long {
+            val buffer=ByteArray(256*1024);var copied=0L
+            while(true) { running.ensureActive();val count=input.read(buffer);if(count<0) return copied;output?.write(buffer,0,count);copied+=count;progress(count) }
+        }
+        status("Unpacking",-1f)
+        // A first pass lists every file, so the plan sees the whole upload before anything is written.
+        val sizes=LinkedHashMap<String,Long>()
+        each { piece,data -> sizes[piece.path]=(sizes[piece.path] ?: 0L)+(piece.size.takeIf { it>=0 } ?: copy(data,null)) }
+        val files=sizes.entries.mapIndexed { i,(path,bytes) -> RealDebrid.File(i,path,bytes,true) }
+        val wanted=DownloadPlan.wanted(files)
+        check(wanted.isNotEmpty()) { "Real-Debrid's archive has no audio files Sonder can play." }
+        val names=DownloadPlan.names(wanted).mapKeys { files[it.key].path }
+        val existing=dir.listFiles().filter { it.isFile }.associateBy { it.name.orEmpty() }.toMutableMap()
+        val total=wanted.sumOf { it.bytes }.coerceAtLeast(1L);var done=0L;var last=0L
+        each { piece,data ->
+            val name=names[piece.path] ?: return@each
+            val target=existing[name] ?: dir.createFile("application/octet-stream",name)?.also { existing[name]=it } ?: throw Problem("Couldn't create $name in the download folder.")
+            val output=resolver.openOutputStream(target.uri,if(piece.continued) "wa" else "wt") ?: throw Problem("Couldn't write $name to the download folder.")
+            output.use { copy(data,it) { count ->
+                done+=count
+                val now=SystemClock.elapsedRealtime()
+                if(now-last>500) { last=now;status("Unpacking",(done.toFloat()/total).coerceAtMost(1f)) }
+            } }
+        }
+        archives.forEach { name -> existing[name]?.delete() ?: dir.findFile(name)?.delete() }
     }
 
     /** The job's own book folder. A new folder never reuses an existing one, because removing the job deletes it. */
