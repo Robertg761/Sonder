@@ -14,7 +14,7 @@ Install over your existing Sonder app to keep its library.
 
 ## Install and listen
 
-Open the supplied `Sonder-1.7.4.apk` on your Android phone. Install it over the existing app without uninstalling it to preserve your library, progress, bookmarks, and granted folder access. Android may ask you to allow installation from the app that opened the file. Open Sonder, tap **+**, and choose files or a folder through the system picker.
+Open the supplied `Sonder-1.8.0.apk` on your Android phone. Install it over the existing app without uninstalling it to preserve your library, progress, bookmarks, and granted folder access. Android may ask you to allow installation from the app that opened the file. Open Sonder, tap **+**, and choose files or a folder through the system picker.
 
 Folders are scanned recursively. Matching album and author tags group tracks into books across file and folder selections. Untagged M4B/MP4 files and files with multiple embedded chapters remain separate books. Other untagged tracks in the same folder are grouped using the folder name. Tracks use natural filename order. The original media files stay where you selected them, so keep that folder, SD card, or document provider available. Cloud document providers must make the files available locally for offline playback. If a provider refuses persistent read permission, Sonder warns you; selecting the file again may be required after restarting.
 
@@ -91,7 +91,7 @@ Android does not expose other apps' private folders through the shared-media ind
 - MP4/M4B Nero `chpl` chapter lists and referenced QuickTime chapter tracks, MP3 ID3v2.3/v2.4 CHAP frames, Vorbis chapter comments, and folder CUE sheets. A file without embedded chapters becomes a track chapter.
 - Folder rescans that append and reorder new tracks within an existing book, including remapping progress and bookmarks to their original tracks.
 - Background and screen-off audio using a foreground MediaSessionService, Android media notifications, lock-screen/headset media commands, audio-focus handling, and pause on headphone disconnect.
-- Whole-book seeking across track files, chapter navigation, 0.5–3× speed, pitch preservation, silence skipping, configurable skip buttons, and smart rewind when reopening a book.
+- Whole-book seeking across track files, chapter navigation, 0.5–3× speed, pitch preservation, silence skipping, configurable skip buttons, smart rewind when reopening a book, and an optional chapter progress bar (Settings → Playback) that shows the current chapter's elapsed and remaining time instead of the whole book's.
 - Sleep timers for 15, 30, 45, 60, or 90 minutes, or the end of the current chapter.
 - Automatic progress saving during playback, per-book speed memory, completed state, favorite books, named collections, search, sorting, grid/list views, and a persistent mini-player.
 - Bookmarks with notes, note editing, position jumping, and deletion.

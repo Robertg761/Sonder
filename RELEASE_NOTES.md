@@ -1,7 +1,6 @@
-Sonder 1.7.4 can finish downloads that Real-Debrid packs into an archive.
+Sonder 1.8.0 can show the current chapter on the player's progress bar.
 
-- Some uploads with many files arrive from Real-Debrid as a single ZIP or RAR file. Sonder used to stop with "Real-Debrid packed these files into an archive, which Sonder can't open." Now it downloads the archive, unpacks the audio, cue sheets, and cover just as it would for a normal upload, deletes the archive, and adds the book to your library. The notification shows "Unpacking" with progress.
-- While unpacking, the book needs room for both the archive and its contents, and Sonder checks for that space before downloading the archive.
-- Archives Sonder still can't open, such as compressed or password-protected RAR files and 7z files, stop with a message that says why.
+- Turn on **Chapter progress bar** in Settings → Playback to make the player's track cover just the chapter you're in. The times under it show how far you are into the chapter and how much of it is left, and dragging the track seeks within that chapter. The track moves on to the next chapter as playback reaches it.
+- Leave it off to keep the track covering the whole book, as before. Books without chapters always show the whole book.
 
 Install over your existing Sonder app to keep your library and listening progress.
