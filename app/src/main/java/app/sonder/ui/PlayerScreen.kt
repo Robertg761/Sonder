@@ -47,6 +47,12 @@ import app.sonder.data.*
     val position=drag?.toLong() ?: playback.position
     val currentIndex=chapters.indexOfLast { it.start<=position }.coerceAtLeast(0)
     val current=chapters.getOrNull(currentIndex)
+    // The span follows the playing position, and is held for the whole drag so the track keeps its range while scrubbing or as playback crosses into the next chapter.
+    var dragSpan by remember { mutableStateOf<Pair<Long,Long>?>(null) }
+    val span=dragSpan ?: trackSpan(chapters,playback.position,book.duration,settings.chapterTrack)
+    val (spanStart,spanEnd)=span
+    val spanLength=(spanEnd-spanStart).coerceAtLeast(1)
+    val spanPosition=(position-spanStart).coerceIn(0,spanLength)
     val bookmarks=library.bookmarks.filter { it.bookId==book.id }
     val listState=rememberLazyListState()
     val scope=rememberCoroutineScope()
@@ -65,8 +71,8 @@ import app.sonder.data.*
                 Spacer(Modifier.height(28.dp));Text(book.title,style=MaterialTheme.typography.headlineMedium,textAlign=TextAlign.Center,modifier=Modifier.fillMaxWidth());Spacer(Modifier.height(4.dp));Text(book.author,color=MaterialTheme.colorScheme.onSurfaceVariant,style=MaterialTheme.typography.bodyLarge,textAlign=TextAlign.Center,modifier=Modifier.fillMaxWidth())
                 if(book.narrator.isNotBlank()) Text("Narrated by ${book.narrator}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant,textAlign=TextAlign.Center,modifier=Modifier.fillMaxWidth().padding(top=4.dp))
                 Spacer(Modifier.height(24.dp));Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) { Text(current?.title ?: "Audiobook",style=MaterialTheme.typography.titleSmall,modifier=Modifier.weight(1f),maxLines=1,overflow=TextOverflow.Ellipsis);Text("Chapter ${currentIndex+1} of ${chapters.size.coerceAtLeast(1)}",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant) }
-                Slider(value=position.toFloat().coerceIn(0f,book.duration.toFloat().coerceAtLeast(1f)),onValueChange={ drag=it },onValueChangeFinished={ drag?.let { vm.seek(it.toLong()) };drag=null },valueRange=0f..book.duration.toFloat().coerceAtLeast(1f),modifier=Modifier.fillMaxWidth(),colors=SliderDefaults.colors(inactiveTrackColor=MaterialTheme.colorScheme.onSurface.copy(alpha=.1f)))
-                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) { Text(clock(position),style=MaterialTheme.typography.labelMedium);Text("−${clock(book.duration-position)}",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant) }
+                Slider(value=spanPosition.toFloat(),onValueChange={ if(dragSpan==null) dragSpan=span;drag=dragSpan!!.first+it },onValueChangeFinished={ drag?.let { vm.seek(it.toLong()) };drag=null;dragSpan=null },valueRange=0f..spanLength.toFloat(),modifier=Modifier.fillMaxWidth(),colors=SliderDefaults.colors(inactiveTrackColor=MaterialTheme.colorScheme.onSurface.copy(alpha=.1f)))
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) { Text(clock(spanPosition),style=MaterialTheme.typography.labelMedium);Text("−${clock(spanLength-spanPosition)}",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant) }
                 Spacer(Modifier.height(18.dp));Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceEvenly,verticalAlignment=Alignment.CenterVertically) {
                     IconAction(Icons.Rounded.SkipPrevious,"Previous chapter",{ vm.seek(chapters.getOrNull(if(position-(current?.start ?: 0)>3000) currentIndex else currentIndex-1)?.start ?: 0) })
                     Column(horizontalAlignment=Alignment.CenterHorizontally) { IconAction(Icons.Rounded.Replay,"Rewind ${settings.rewind} seconds",{ vm.skip(-settings.rewind) });Text("${settings.rewind}s",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -113,5 +119,13 @@ import app.sonder.data.*
             if(timer!=0L) TextButton({ vm.timer(0);timerOpen=false },Modifier.fillMaxWidth()) { Text("Turn off timer",color=MaterialTheme.colorScheme.error) }
         }
     }
+}
+/** The start and end of what the playback track covers: the chapter playing at [position], or the whole book. */
+internal fun trackSpan(chapters:List<Chapter>,position:Long,duration:Long,chapterMode:Boolean):Pair<Long,Long> {
+    val index=chapters.indexOfLast { it.start<=position }
+    if(!chapterMode || index<0) return 0L to duration
+    val start=chapters[index].start
+    val end=chapters.getOrNull(index+1)?.start ?: duration
+    return if(end>start) start to end else 0L to duration
 }
 @Composable private fun TimerOption(label:String,onClick:()->Unit,selected:Boolean=false) { Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable(onClick=onClick).padding(horizontal=4.dp,vertical=14.dp),verticalAlignment=Alignment.CenterVertically) { Text(label,style=MaterialTheme.typography.bodyLarge,modifier=Modifier.weight(1f));if(selected) Icon(Icons.Rounded.Check,"Selected",tint=MaterialTheme.colorScheme.primary) } }
