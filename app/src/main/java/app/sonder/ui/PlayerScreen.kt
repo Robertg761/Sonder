@@ -47,8 +47,10 @@ import app.sonder.data.*
     val position=drag?.toLong() ?: playback.position
     val currentIndex=chapters.indexOfLast { it.start<=position }.coerceAtLeast(0)
     val current=chapters.getOrNull(currentIndex)
-    // The span follows the playing position rather than the drag, so the track keeps its range while scrubbing to a chapter's edge.
-    val (spanStart,spanEnd)=trackSpan(chapters,playback.position,book.duration,settings.chapterTrack)
+    // The span follows the playing position, and is held for the whole drag so the track keeps its range while scrubbing or as playback crosses into the next chapter.
+    var dragSpan by remember { mutableStateOf<Pair<Long,Long>?>(null) }
+    val span=dragSpan ?: trackSpan(chapters,playback.position,book.duration,settings.chapterTrack)
+    val (spanStart,spanEnd)=span
     val spanLength=(spanEnd-spanStart).coerceAtLeast(1)
     val spanPosition=(position-spanStart).coerceIn(0,spanLength)
     val bookmarks=library.bookmarks.filter { it.bookId==book.id }
@@ -69,7 +71,7 @@ import app.sonder.data.*
                 Spacer(Modifier.height(28.dp));Text(book.title,style=MaterialTheme.typography.headlineMedium,textAlign=TextAlign.Center,modifier=Modifier.fillMaxWidth());Spacer(Modifier.height(4.dp));Text(book.author,color=MaterialTheme.colorScheme.onSurfaceVariant,style=MaterialTheme.typography.bodyLarge,textAlign=TextAlign.Center,modifier=Modifier.fillMaxWidth())
                 if(book.narrator.isNotBlank()) Text("Narrated by ${book.narrator}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant,textAlign=TextAlign.Center,modifier=Modifier.fillMaxWidth().padding(top=4.dp))
                 Spacer(Modifier.height(24.dp));Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) { Text(current?.title ?: "Audiobook",style=MaterialTheme.typography.titleSmall,modifier=Modifier.weight(1f),maxLines=1,overflow=TextOverflow.Ellipsis);Text("Chapter ${currentIndex+1} of ${chapters.size.coerceAtLeast(1)}",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant) }
-                Slider(value=spanPosition.toFloat(),onValueChange={ drag=spanStart+it },onValueChangeFinished={ drag?.let { vm.seek(it.toLong()) };drag=null },valueRange=0f..spanLength.toFloat(),modifier=Modifier.fillMaxWidth(),colors=SliderDefaults.colors(inactiveTrackColor=MaterialTheme.colorScheme.onSurface.copy(alpha=.1f)))
+                Slider(value=spanPosition.toFloat(),onValueChange={ if(dragSpan==null) dragSpan=span;drag=dragSpan!!.first+it },onValueChangeFinished={ drag?.let { vm.seek(it.toLong()) };drag=null;dragSpan=null },valueRange=0f..spanLength.toFloat(),modifier=Modifier.fillMaxWidth(),colors=SliderDefaults.colors(inactiveTrackColor=MaterialTheme.colorScheme.onSurface.copy(alpha=.1f)))
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) { Text(clock(spanPosition),style=MaterialTheme.typography.labelMedium);Text("−${clock(spanLength-spanPosition)}",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant) }
                 Spacer(Modifier.height(18.dp));Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceEvenly,verticalAlignment=Alignment.CenterVertically) {
                     IconAction(Icons.Rounded.SkipPrevious,"Previous chapter",{ vm.seek(chapters.getOrNull(if(position-(current?.start ?: 0)>3000) currentIndex else currentIndex-1)?.start ?: 0) })
