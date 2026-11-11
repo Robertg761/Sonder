@@ -29,12 +29,14 @@ import app.sonder.data.*
     var tracks by remember(book.id) { mutableStateOf<List<Track>>(emptyList()) }
     var editing by remember { mutableStateOf(false) };var remove by remember { mutableStateOf(false) }
     LaunchedEffect(book.id,book.duration) { chapters=vm.store.chapters(book.id);tracks=vm.store.tracks(book.id) }
+    val numbers=remember(chapters) { chapterNumbers(chapters) }
+    val chapterTotal=numbers.count { it!=null }
     LazyColumn(contentPadding=PaddingValues(start=24.dp,end=24.dp,top=8.dp,bottom=24.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
         item {
             Column(Modifier.fillMaxWidth(),horizontalAlignment=Alignment.CenterHorizontally) {
                 Cover(book,Modifier.width(188.dp).height(254.dp).shadow(16.dp,RoundedCornerShape(14.dp),ambientColor=Color.Black.copy(alpha=.3f),spotColor=Color.Black.copy(alpha=.3f)).combinedClickable(onClick=onOptions,onLongClickLabel="Book options",onLongClick=onOptions),large=true);Spacer(Modifier.height(24.dp));Text(book.title,style=MaterialTheme.typography.headlineMedium,textAlign=TextAlign.Center);Spacer(Modifier.height(6.dp));Text(book.author,style=MaterialTheme.typography.bodyLarge,color=MaterialTheme.colorScheme.onSurfaceVariant,textAlign=TextAlign.Center)
                 if(book.narrator.isNotBlank()) Text("Narrated by ${book.narrator}",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant,textAlign=TextAlign.Center,modifier=Modifier.padding(top=2.dp))
-                Spacer(Modifier.height(12.dp));Text(listOf(duration(book.duration),"${chapters.size} ${if(chapters.size==1) "chapter" else "chapters"}",book.format).filter { it.isNotBlank() }.joinToString("  ·  "),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.height(12.dp));Text(listOf(duration(book.duration),"$chapterTotal ${if(chapterTotal==1) "chapter" else "chapters"}",book.format).filter { it.isNotBlank() }.joinToString("  ·  "),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary)
                 if(book.position>0) { Spacer(Modifier.height(20.dp));ProgressBar(book.progress,height=6.dp);Text("${(book.progress*100).toInt()}% complete · ${duration(((book.duration-book.position)/book.speed.toDouble().coerceAtLeast(.5)).toLong())} left at ${book.speed}×",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.padding(top=8.dp)) }
                 Spacer(Modifier.height(20.dp));Button(onClick=onPlay,modifier=Modifier.fillMaxWidth().heightIn(min=56.dp),shape=MaterialTheme.shapes.medium) { Icon(Icons.Rounded.PlayArrow,null);Spacer(Modifier.width(8.dp));Text(if(book.inProgress) "Continue listening" else "Start listening",style=MaterialTheme.typography.titleSmall) }
                 Spacer(Modifier.height(12.dp));Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
@@ -46,18 +48,19 @@ import app.sonder.data.*
             }
         }
         if(book.description.isNotBlank()) item { SectionTitle("About this book");Text(book.description,style=MaterialTheme.typography.bodyLarge,color=MaterialTheme.colorScheme.onSurface.copy(alpha=.85f)) }
-        item { SectionTitle("Chapters","${chapters.size}") }
-        itemsIndexed(chapters,key={ _,c -> c.start }) { i,c -> ChapterRow(i,c,book.position>=c.start && book.position<c.end,onClick={ vm.play(book,c.start) }) }
+        item { SectionTitle("Chapters","$chapterTotal") }
+        itemsIndexed(chapters,key={ _,c -> c.start }) { i,c -> ChapterRow(numbers.getOrNull(i),c,book.position>=c.start && book.position<c.end,onClick={ vm.play(book,c.start) }) }
         item { SectionTitle("File details");Surface(shape=MaterialTheme.shapes.large,color=MaterialTheme.colorScheme.surfaceContainer) { Column(Modifier.fillMaxWidth().padding(horizontal=18.dp,vertical=10.dp)) { DetailLine("Format",book.format);DetailLine("Tracks","${tracks.size}");DetailLine("Size","%.1f MB".format(book.size/1048576.0));if(book.genre.isNotBlank()) DetailLine("Genre",book.genre);if(book.collection.isNotBlank()) DetailLine("Collection",book.collection);DetailLine("Added",java.time.Instant.ofEpochMilli(book.added).atZone(java.time.ZoneId.systemDefault()).toLocalDate().format(java.time.format.DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.MEDIUM))) } } }
         item { TextButton({ remove=true },modifier=Modifier.fillMaxWidth().padding(top=8.dp),colors=ButtonDefaults.textButtonColors(contentColor=MaterialTheme.colorScheme.error)) { Icon(Icons.Rounded.DeleteOutline,null);Spacer(Modifier.width(8.dp));Text("Remove from library") } }
     }
     if(editing) EditBookDialog(book,onDismiss={ editing=false },onSave={ vm.edit(it);editing=false })
     if(remove) AlertDialog(onDismissRequest={ remove=false },title={ Text("Remove this audiobook?") },text={ Text("The book, progress, and bookmarks will be removed from Sonder. The original audio files will stay on your phone.") },confirmButton={ TextButton({ vm.remove(book);remove=false;onRemoved() }) { Text("Remove",color=MaterialTheme.colorScheme.error) } },dismissButton={ TextButton({ remove=false }) { Text("Cancel") } })
 }
-@Composable fun ChapterRow(index:Int,chapter:Chapter,active:Boolean,onClick:()->Unit) {
+/** [number] is the chapter's number, or null for front or back matter, which is listed without one. */
+@Composable fun ChapterRow(number:Int?,chapter:Chapter,active:Boolean,onClick:()->Unit) {
     Surface(onClick=onClick,color=if(active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.background,shape=MaterialTheme.shapes.medium,modifier=Modifier.fillMaxWidth()) {
         Row(Modifier.padding(horizontal=12.dp,vertical=14.dp),verticalAlignment=Alignment.CenterVertically) {
-            if(active) Box(Modifier.width(32.dp).semantics { contentDescription="Current chapter" }) { WaveBars() } else Text("%02d".format(index+1),modifier=Modifier.width(32.dp),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            if(active) Box(Modifier.width(32.dp).semantics { contentDescription="Current chapter" }) { WaveBars() } else Text(number?.let { "%02d".format(it) } ?: "",modifier=Modifier.width(32.dp),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.width(12.dp));Column(Modifier.weight(1f)) { Text(chapter.title,style=MaterialTheme.typography.titleSmall,maxLines=2,overflow=TextOverflow.Ellipsis);Text(clock(chapter.start),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant) };Text(duration(chapter.end-chapter.start),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

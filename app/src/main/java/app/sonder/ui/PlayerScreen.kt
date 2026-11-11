@@ -47,6 +47,8 @@ import app.sonder.data.*
     val position=drag?.toLong() ?: playback.position
     val currentIndex=chapters.indexOfLast { it.start<=position }.coerceAtLeast(0)
     val current=chapters.getOrNull(currentIndex)
+    val numbers=remember(chapters) { chapterNumbers(chapters) }
+    val chapterTotal=numbers.count { it!=null }
     // The span follows the playing position, and is held for the whole drag so the track keeps its range while scrubbing or as playback crosses into the next chapter.
     var dragSpan by remember { mutableStateOf<Pair<Long,Long>?>(null) }
     val span=dragSpan ?: trackSpan(chapters,playback.position,book.duration,settings.chapterTrack)
@@ -70,7 +72,7 @@ import app.sonder.data.*
                 Spacer(Modifier.height(8.dp));Cover(book,Modifier.widthIn(max=280.dp).fillMaxWidth(.72f).aspectRatio(.74f).shadow(18.dp,RoundedCornerShape(14.dp),ambientColor=Color.Black.copy(alpha=.35f),spotColor=Color.Black.copy(alpha=.35f)).combinedClickable(onClick=onOptions,onLongClickLabel="Book options",onLongClick=onOptions),large=true)
                 Spacer(Modifier.height(28.dp));Text(book.title,style=MaterialTheme.typography.headlineMedium,textAlign=TextAlign.Center,modifier=Modifier.fillMaxWidth());Spacer(Modifier.height(4.dp));Text(book.author,color=MaterialTheme.colorScheme.onSurfaceVariant,style=MaterialTheme.typography.bodyLarge,textAlign=TextAlign.Center,modifier=Modifier.fillMaxWidth())
                 if(book.narrator.isNotBlank()) Text("Narrated by ${book.narrator}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant,textAlign=TextAlign.Center,modifier=Modifier.fillMaxWidth().padding(top=4.dp))
-                Spacer(Modifier.height(24.dp));Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) { Text(current?.title ?: "Audiobook",style=MaterialTheme.typography.titleSmall,modifier=Modifier.weight(1f),maxLines=1,overflow=TextOverflow.Ellipsis);Text("Chapter ${currentIndex+1} of ${chapters.size.coerceAtLeast(1)}",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant) }
+                Spacer(Modifier.height(24.dp));Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) { Text(current?.title ?: "Audiobook",style=MaterialTheme.typography.titleSmall,modifier=Modifier.weight(1f),maxLines=1,overflow=TextOverflow.Ellipsis);numbers.getOrNull(currentIndex)?.let { Text("Chapter $it of $chapterTotal",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant) } }
                 Slider(value=spanPosition.toFloat(),onValueChange={ if(dragSpan==null) dragSpan=span;drag=dragSpan!!.first+it },onValueChangeFinished={ drag?.let { vm.seek(it.toLong()) };drag=null;dragSpan=null },valueRange=0f..spanLength.toFloat(),modifier=Modifier.fillMaxWidth(),colors=SliderDefaults.colors(inactiveTrackColor=MaterialTheme.colorScheme.onSurface.copy(alpha=.1f)))
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) { Text(clock(spanPosition),style=MaterialTheme.typography.labelMedium);Text("−${clock(spanLength-spanPosition)}",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant) }
                 Spacer(Modifier.height(18.dp));Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceEvenly,verticalAlignment=Alignment.CenterVertically) {
@@ -88,7 +90,7 @@ import app.sonder.data.*
                 if(playback.error.isNotBlank()) Text(playback.error,color=MaterialTheme.colorScheme.error,modifier=Modifier.padding(top=16.dp),style=MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(20.dp));PrimaryTabRow(selectedTabIndex=tab,containerColor=MaterialTheme.colorScheme.background,divider={ HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant) }) { listOf("Chapters","Bookmarks").forEachIndexed { i,title -> Tab(selected=tab==i,onClick={ tab=i },text={ Text(title) },unselectedContentColor=MaterialTheme.colorScheme.onSurfaceVariant) } };Spacer(Modifier.height(12.dp))
             }
-            if(tab==0) itemsIndexed(chapters,key={ _,c -> c.start }) { i,c -> ChapterRow(i,c,i==currentIndex,{ vm.seek(c.start) }) }
+            if(tab==0) itemsIndexed(chapters,key={ _,c -> c.start }) { i,c -> ChapterRow(numbers.getOrNull(i),c,i==currentIndex,{ vm.seek(c.start) }) }
             else if(bookmarks.isEmpty()) item { EmptyState(Icons.Rounded.BookmarkBorder,"Keep the good parts","Save a moment with a note so you can return to it later.") }
             else itemsIndexed(bookmarks,key={ _,b -> b.id }) { _,b -> Row(Modifier.fillMaxWidth().clickable { vm.seek(b.position) }.padding(vertical=12.dp),verticalAlignment=Alignment.CenterVertically) { Icon(Icons.Rounded.Bookmark,null,tint=MaterialTheme.colorScheme.primary);Spacer(Modifier.width(16.dp));Column(Modifier.weight(1f)) { Text(b.note,style=MaterialTheme.typography.bodyLarge);Text(clock(b.position),style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary) };IconAction(Icons.Rounded.DeleteOutline,"Delete bookmark",{ vm.deleteBookmark(b.id) },tint=MaterialTheme.colorScheme.onSurfaceVariant) } }
         }
