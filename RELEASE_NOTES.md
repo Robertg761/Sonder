@@ -1,6 +1,6 @@
-Sonder 1.8.0 can show the current chapter on the player's progress bar.
+Sonder 1.8.1 fixes the chapter counter for books that open with credits or other front matter.
 
-- Turn on **Chapter progress bar** in Settings → Playback to make the player's track cover just the chapter you're in. The times under it show how far you are into the chapter and how much of it is left, and dragging the track seeks within that chapter. The track moves on to the next chapter as playback reaches it.
-- Leave it off to keep the track covering the whole book, as before. Books without chapters always show the whole book.
+- Tracks such as Opening Credits, Content Warning, Dedication, Preamble, Prologue, Acknowledgments and End Credits no longer count as chapters. The player's "Chapter X of Y" now matches the book's own chapter numbers, and the book details show the real chapter count.
+- These tracks are still listed and playable; they just appear without a chapter number, and the counter is hidden while one is playing.
 
 Install over your existing Sonder app to keep your library and listening progress.
