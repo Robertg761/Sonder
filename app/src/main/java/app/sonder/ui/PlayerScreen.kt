@@ -39,6 +39,7 @@ import app.sonder.data.*
     val settings by vm.settings.collectAsStateWithLifecycle()
     val timer by vm.sleep.collectAsStateWithLifecycle()
     val library by vm.library.collectAsStateWithLifecycle()
+    val returnPoint by vm.returnPoint.collectAsStateWithLifecycle()
     var chapters by remember(book.id) { mutableStateOf<List<Chapter>>(emptyList()) }
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var speedOpen by remember { mutableStateOf(false) };var timerOpen by remember { mutableStateOf(false) };var bookmarkOpen by remember { mutableStateOf(false) };var note by remember { mutableStateOf("") };var bookmarkPosition by rememberSaveable { mutableLongStateOf(0) }
@@ -69,6 +70,13 @@ import app.sonder.data.*
         Box(Modifier.fillMaxSize().padding(insets)) {
         LazyColumn(Modifier.fillMaxSize().widthIn(max=650.dp).align(Alignment.TopCenter),state=listState,contentPadding=PaddingValues(start=24.dp,end=24.dp,bottom=32.dp),horizontalAlignment=Alignment.CenterHorizontally) {
             item {
+                // Hidden once listening is back at that place, which happens after tapping Return or catching up.
+                val point=returnPoint?.takeIf { it.bookId==book.id && kotlin.math.abs(playback.position-it.position)>5000 }
+                // Keeps the last point drawn while the banner animates away.
+                val lastPoint=remember { arrayOfNulls<ReturnPoint>(1) };if(point!=null) lastPoint[0]=point
+                AnimatedVisibility(point!=null,enter=fadeIn()+slideInVertically(),exit=fadeOut()+slideOutVertically()) {
+                    lastPoint[0]?.let { p -> ReturnBanner(chapters.lastOrNull { it.start<=p.position }?.title.orEmpty(),p.position-(chapters.lastOrNull { it.start<=p.position }?.start ?: 0),p.position<playback.position,{ vm.returnTo(book,p) },{ vm.dismissReturn(p) },Modifier.padding(top=8.dp)) }
+                }
                 Spacer(Modifier.height(8.dp));Cover(book,Modifier.widthIn(max=280.dp).fillMaxWidth(.72f).aspectRatio(.74f).shadow(18.dp,RoundedCornerShape(14.dp),ambientColor=Color.Black.copy(alpha=.35f),spotColor=Color.Black.copy(alpha=.35f)).combinedClickable(onClick=onOptions,onLongClickLabel="Book options",onLongClick=onOptions),large=true)
                 Spacer(Modifier.height(28.dp));Text(book.title,style=MaterialTheme.typography.headlineMedium,textAlign=TextAlign.Center,modifier=Modifier.fillMaxWidth());Spacer(Modifier.height(4.dp));Text(book.author,color=MaterialTheme.colorScheme.onSurfaceVariant,style=MaterialTheme.typography.bodyLarge,textAlign=TextAlign.Center,modifier=Modifier.fillMaxWidth())
                 if(book.narrator.isNotBlank()) Text("Narrated by ${book.narrator}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant,textAlign=TextAlign.Center,modifier=Modifier.fillMaxWidth().padding(top=4.dp))
@@ -76,11 +84,11 @@ import app.sonder.data.*
                 Slider(value=spanPosition.toFloat(),onValueChange={ if(dragSpan==null) dragSpan=span;drag=dragSpan!!.first+it },onValueChangeFinished={ drag?.let { vm.seek(it.toLong()) };drag=null;dragSpan=null },valueRange=0f..spanLength.toFloat(),modifier=Modifier.fillMaxWidth(),colors=SliderDefaults.colors(inactiveTrackColor=MaterialTheme.colorScheme.onSurface.copy(alpha=.1f)))
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) { Text(clock(spanPosition),style=MaterialTheme.typography.labelMedium);Text("−${clock(spanLength-spanPosition)}",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant) }
                 Spacer(Modifier.height(18.dp));Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceEvenly,verticalAlignment=Alignment.CenterVertically) {
-                    IconAction(Icons.Rounded.SkipPrevious,"Previous chapter",{ vm.seek(chapters.getOrNull(if(position-(current?.start ?: 0)>3000) currentIndex else currentIndex-1)?.start ?: 0) })
+                    IconAction(Icons.Rounded.SkipPrevious,"Previous chapter",{ vm.skipChapter(chapters,forward=false) })
                     Column(horizontalAlignment=Alignment.CenterHorizontally) { IconAction(Icons.Rounded.Replay,"Rewind ${settings.rewind} seconds",{ vm.skip(-settings.rewind) });Text("${settings.rewind}s",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant) }
                     FilledIconButton(vm::toggle,modifier=Modifier.size(72.dp),shape=CircleShape) { if(playback.buffering) CircularProgressIndicator(Modifier.size(26.dp),color=MaterialTheme.colorScheme.onPrimary,strokeWidth=2.dp) else Icon(if(playback.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,if(playback.playing) "Pause" else "Play",Modifier.size(36.dp)) }
                     Column(horizontalAlignment=Alignment.CenterHorizontally) { IconAction(Icons.Rounded.Replay,"Forward ${settings.forward} seconds",{ vm.skip(settings.forward) },Modifier.graphicsLayer(scaleX=-1f));Text("${settings.forward}s",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant) }
-                    IconAction(Icons.Rounded.SkipNext,"Next chapter",{ chapters.getOrNull(currentIndex+1)?.let { vm.seek(it.start) } })
+                    IconAction(Icons.Rounded.SkipNext,"Next chapter",{ vm.skipChapter(chapters,forward=true) })
                 }
                 Spacer(Modifier.height(24.dp));Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                     ActionTile(Icons.Rounded.Speed,"${playback.speed}×",{ speedOpen=true },Modifier.weight(1f),"Playback speed",active=playback.speed!=1f)
@@ -129,5 +137,19 @@ internal fun trackSpan(chapters:List<Chapter>,position:Long,duration:Long,chapte
     val start=chapters[index].start
     val end=chapters.getOrNull(index+1)?.start ?: duration
     return if(end>start) start to end else 0L to duration
+}
+/** Offers the place a chapter skip left behind. [inChapter] is how far into [chapter] it was; [behind] is true when the skip went forward past it. */
+@Composable internal fun ReturnBanner(chapter:String,inChapter:Long,behind:Boolean,onReturn:()->Unit,onDismiss:()->Unit,modifier:Modifier=Modifier) {
+    Surface(modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.secondaryContainer,contentColor=MaterialTheme.colorScheme.onSecondaryContainer) {
+        Row(Modifier.padding(start=16.dp,top=6.dp,bottom=6.dp,end=4.dp),verticalAlignment=Alignment.CenterVertically) {
+            Icon(Icons.Rounded.History,null,Modifier.size(22.dp));Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f).padding(vertical=6.dp)) {
+                Text(if(behind) "Skipped ahead by mistake?" else "Skipped back by mistake?",style=MaterialTheme.typography.titleSmall)
+                Text("You were ${clock(inChapter)} into ${chapter.ifBlank { "the book" }}",style=MaterialTheme.typography.bodySmall,maxLines=2,overflow=TextOverflow.Ellipsis)
+            }
+            TextButton(onReturn) { Text("Return") }
+            IconAction(Icons.Rounded.Close,"Dismiss",onDismiss,tint=MaterialTheme.colorScheme.onSecondaryContainer)
+        }
+    }
 }
 @Composable private fun TimerOption(label:String,onClick:()->Unit,selected:Boolean=false) { Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable(onClick=onClick).padding(horizontal=4.dp,vertical=14.dp),verticalAlignment=Alignment.CenterVertically) { Text(label,style=MaterialTheme.typography.bodyLarge,modifier=Modifier.weight(1f));if(selected) Icon(Icons.Rounded.Check,"Selected",tint=MaterialTheme.colorScheme.primary) } }

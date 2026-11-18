@@ -19,6 +19,7 @@ import app.sonder.SonderApp
 import app.sonder.data.*
 import app.sonder.download.AudioBookBay
 import app.sonder.download.RealDebrid
+import app.sonder.media.ChapterSkip
 import app.sonder.media.PlaybackService
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -130,6 +131,19 @@ class LibraryViewModel(application:Application,private val saved:androidx.lifecy
         c.seekTo(index,pos-tracks[index].offset);store.progress(playback.value.bookId,pos,0)
     } }
     fun skip(seconds:Int) = seek(playback.value.position+seconds*1000L)
+    /** The place left behind by the last chapter skip, from the app or any outside button, until it is used, dismissed or caught up with. */
+    val returnPoint=app.returnPoints.point
+    fun skipChapter(chapters:List<Chapter>,forward:Boolean) {
+        val p=playback.value;if(p.bookId<=0) return
+        val starts=chapters.map { it.start }
+        val target=(if(forward) ChapterSkip.next(starts,p.position) else ChapterSkip.previous(starts,p.position)) ?: return
+        app.returnPoints.skipped(p.bookId,p.position,target);seek(target)
+    }
+    fun returnTo(book:Book,point:ReturnPoint) {
+        app.returnPoints.clear(point)
+        if(playback.value.bookId==book.id && (controller?.mediaItemCount ?: 0)>0) seek(point.position) else play(book,point.position)
+    }
+    fun dismissReturn(point:ReturnPoint) { app.returnPoints.clear(point) }
     fun speed(value:Float) { controller?.setPlaybackParameters(PlaybackParameters(value,if(settings.value.preservePitch) 1f else value)) }
     fun timer(minutes:Int) { controller?.sendCustomCommand(SessionCommand(PlaybackService.TIMER,Bundle.EMPTY),Bundle().apply { putInt("minutes",minutes) }) }
     fun importFiles(uris:List<Uri>) { if(importJob?.isActive==true) { notice("An import is already running.");return };importJob=viewModelScope.launch(errorHandler) { importer.files(uris);refreshActiveQueue() } }
