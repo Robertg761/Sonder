@@ -47,6 +47,8 @@ class PlaybackService : MediaSessionService() {
     private var chapterDeadline:Long?=null
     private var resumeRewindPending=false
     private var playedCurrentQueue=false
+    private var lastLoopPosition=0L
+    private var chaptersBook=0L
     companion object {
         const val TIMER="app.sonder.SLEEP_TIMER"
         private val timerState=MutableStateFlow(0L)
@@ -68,6 +70,11 @@ class PlaybackService : MediaSessionService() {
             override fun getSeekForwardIncrement()=app.preferences.settings.value.forward*1000L
             override fun seekBack() { seekTo((currentPosition-seekBackIncrement).coerceAtLeast(0)) }
             override fun seekForward() { seekTo((currentPosition+seekForwardIncrement).coerceAtMost(duration.takeIf { it>0 } ?: Long.MAX_VALUE)) }
+            // Previous from the notification, lock screen and headsets only restarts the chapter playing, never an earlier one or the book. Next moves to the next chapter.
+            override fun seekToPrevious() { skipChapter(forward=false) }
+            override fun seekToPreviousMediaItem() { skipChapter(forward=false) }
+            override fun seekToNext() { skipChapter(forward=true) }
+            override fun seekToNextMediaItem() { skipChapter(forward=true) }
         }
         session=MediaSession.Builder(this,sessionPlayer).setSessionActivity(intent).setCallback(object:MediaSession.Callback {
             override fun onConnect(session:MediaSession,controller:MediaSession.ControllerInfo):MediaSession.ConnectionResult {
@@ -90,7 +97,7 @@ class PlaybackService : MediaSessionService() {
                 val id=mediaItem?.mediaMetadata?.extras?.getLong("bookId") ?: 0
                 if(id!=lastBook || reason==Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) clearResumeRewind()
                 if(id!=lastBook) { lastBook=id;accumulated=0;if(chapterDeadline!=null) timerState.value=0;chapterDeadline=null }
-                scope.launch { runCatching { app.store.chapters(id) }.onSuccess { chapters=it }.onFailure { android.util.Log.e("Sonder","Chapter lookup failed",it);chapters=emptyList() } }
+                scope.launch { runCatching { app.store.chapters(id) }.onSuccess { chapters=it;chaptersBook=id }.onFailure { android.util.Log.e("Sonder","Chapter lookup failed",it);chapters=emptyList();chaptersBook=id } }
                 lastRevision=mediaItem?.mediaMetadata?.extras?.getLong("progressRevision") ?: 0
                 snapshot();lastWall=SystemClock.elapsedRealtime()
             }
@@ -137,8 +144,31 @@ class PlaybackService : MediaSessionService() {
                     if(timerState.value==0L) { player.pause();timerDeadline=0 }
                 }
                 if(chapterDeadline?.let { globalPosition()>=it }==true) { player.pause();chapterDeadline=null;timerState.value=0 }
+                caughtUp()
             }
         }
+    }
+    private fun skipChapter(forward:Boolean) {
+        val bookId=player.currentMediaItem?.mediaMetadata?.extras?.getLong("bookId") ?: return
+        val from=globalPosition()
+        val starts=if(bookId==chaptersBook && chapters.isNotEmpty()) chapters.map { it.start } else queueOffsets(bookId)
+        val target=(if(forward) ChapterSkip.next(starts,from) else ChapterSkip.restart(starts,from)) ?: return
+        app.returnPoints.skipped(bookId,from,target)
+        seekGlobal(bookId,target)
+        lastLoopPosition=target
+    }
+    private fun queueOffsets(bookId:Long)=(0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaMetadata.extras }.filter { it?.getLong("bookId")==bookId }.map { it?.getLong("offset") ?: 0 }
+    private fun seekGlobal(bookId:Long,target:Long) {
+        val index=(0 until player.mediaItemCount).lastOrNull { val e=player.getMediaItemAt(it).mediaMetadata.extras;e!=null && e.getLong("bookId")==bookId && e.getLong("offset")<=target } ?: return
+        player.seekTo(index,(target-(player.getMediaItemAt(index).mediaMetadata.extras?.getLong("offset") ?: 0)).coerceAtLeast(0))
+    }
+    /** Listening on past the place a skip left behind means there is nothing left to return to. */
+    private fun caughtUp() {
+        val position=globalPosition();val previous=lastLoopPosition;lastLoopPosition=position
+        val point=app.returnPoints.point.value ?: return
+        if(point.bookId!=lastBook || player.currentMediaItem?.mediaMetadata?.extras?.getLong("bookId")!=lastBook) return
+        // Only steady playback counts, not a jump over the point.
+        if(previous<point.position && position>=point.position && position-previous<=5000) app.returnPoints.clear(point)
     }
     private fun clearResumeRewind() { resumeRewindPending=false;playedCurrentQueue=false }
     private fun rewindAfterPause() {
