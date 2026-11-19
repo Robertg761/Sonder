@@ -25,6 +25,14 @@ class ChapterSkipTest {
         assertEquals(0L,ChapterSkip.previous(listOf(30_000L,90_000L),20_000))
     }
     @Test fun withoutChaptersPreviousRestartsFromTheBeginningOnly() { assertEquals(0L,ChapterSkip.previous(emptyList(),50_000)) }
+    @Test fun restartStaysInTheChapterPlayingEvenRightAfterItStarts() {
+        assertEquals(7_200_000L,ChapterSkip.restart(starts,9_000_000))
+        assertEquals(7_200_000L,ChapterSkip.restart(starts,7_201_000))
+        assertEquals(7_200_000L,ChapterSkip.restart(starts,7_200_000))
+        assertEquals(0L,ChapterSkip.restart(starts,500))
+        assertEquals(0L,ChapterSkip.restart(listOf(30_000L),10_000))
+        assertEquals(0L,ChapterSkip.restart(emptyList(),50_000))
+    }
     @Test fun nextGoesToTheNextChapterAndStopsAtTheLast() {
         assertEquals(7_200_000L,ChapterSkip.next(starts,3_600_000))
         assertEquals(3_600_000L,ChapterSkip.next(starts,0))

@@ -15,6 +15,9 @@ object ChapterSkip {
         return if(position-points[index]>RESTART_GRACE_MS) points[index] else points[(index-1).coerceAtLeast(0)]
     }
 
+    /** The start of the chapter playing. Outside buttons use this, so an accidental previous costs at most the current chapter. */
+    fun restart(starts:List<Long>,position:Long):Long = boundaries(starts).last { it<=position.coerceAtLeast(0) }
+
     /** The start of the next chapter, or null in the last one. */
     fun next(starts:List<Long>,position:Long):Long? = boundaries(starts).firstOrNull { it>position }
 

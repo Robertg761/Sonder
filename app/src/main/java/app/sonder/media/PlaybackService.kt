@@ -70,7 +70,7 @@ class PlaybackService : MediaSessionService() {
             override fun getSeekForwardIncrement()=app.preferences.settings.value.forward*1000L
             override fun seekBack() { seekTo((currentPosition-seekBackIncrement).coerceAtLeast(0)) }
             override fun seekForward() { seekTo((currentPosition+seekForwardIncrement).coerceAtMost(duration.takeIf { it>0 } ?: Long.MAX_VALUE)) }
-            // Previous and next from the notification, lock screen, headsets and car controls move by chapter, never to the start of the book.
+            // Previous from the notification, lock screen and headsets only restarts the chapter playing, never an earlier one or the book. Next moves to the next chapter.
             override fun seekToPrevious() { skipChapter(forward=false) }
             override fun seekToPreviousMediaItem() { skipChapter(forward=false) }
             override fun seekToNext() { skipChapter(forward=true) }
@@ -152,7 +152,7 @@ class PlaybackService : MediaSessionService() {
         val bookId=player.currentMediaItem?.mediaMetadata?.extras?.getLong("bookId") ?: return
         val from=globalPosition()
         val starts=if(bookId==chaptersBook && chapters.isNotEmpty()) chapters.map { it.start } else queueOffsets(bookId)
-        val target=(if(forward) ChapterSkip.next(starts,from) else ChapterSkip.previous(starts,from)) ?: return
+        val target=(if(forward) ChapterSkip.next(starts,from) else ChapterSkip.restart(starts,from)) ?: return
         app.returnPoints.skipped(bookId,from,target)
         seekGlobal(bookId,target)
         lastLoopPosition=target
