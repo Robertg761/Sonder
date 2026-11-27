@@ -24,7 +24,19 @@ class Importer(private val context:Context,private val store:LibraryStore) {
     private val mutex=Mutex()
     private val state=MutableStateFlow(ImportProgress())
     val progress=state.asStateFlow()
-    companion object { val extensions=setOf("mp3","m4b","m4a","mp4","aac","flac","ogg","opus","wav","wave","webm","mka","mkv","amr","3gp") }
+    companion object {
+        val extensions=setOf("mp3","m4b","m4a","mp4","aac","flac","ogg","opus","wav","wave","webm","mka","mkv","amr","3gp")
+        /**
+         * The book a file belongs to. Album tags identify books across picker methods; untagged whole-book containers
+         * stay separate. Files only join books within [scope], so a download never merges into a book from elsewhere.
+         */
+        internal fun source(scope:String,album:String,author:String,container:Boolean,folder:(()->String)?,file:()->String)=scope+when {
+            album.isNotBlank() -> "album:${album.trim().lowercase()}:${author.trim().lowercase()}"
+            container -> "file:${file()}"
+            folder!=null -> "folder:${folder()}"
+            else -> "file:${file()}"
+        }
+    }
     data class Input(val uri:Uri,val name:String,val size:Long,val folder:String="",val folderName:String="",val siblings:List<DocumentFile> = emptyList())
     private data class Info(val input:Input,val title:String,val album:String,val author:String,val narrator:String,val genre:String,val duration:Long,val cover:String,val chapters:List<Chapter>,val description:String="",val series:String="")
     suspend fun files(uris:List<Uri>) = runImport {
@@ -33,7 +45,7 @@ class Importer(private val context:Context,private val store:LibraryStore) {
     suspend fun discovered(files:List<DeviceScanner.File>) = runImport { files.map { it.input() } }
     suspend fun folder(uri:Uri) = runImport { scan(uri).also { store.rememberFolder(uri.toString()) } }
     /** Imports a finished download folder without adding it to the rescanned folders. Returns the import result. */
-    suspend fun downloaded(uri:Uri):ImportProgress = runImport { scan(uri) }
+    suspend fun downloaded(uri:Uri):ImportProgress = runImport("download:${identity(uri)}|") { scan(uri) }
     private suspend fun scan(uri:Uri):List<Input> {
         val root=DocumentFile.fromTreeUri(context,uri) ?: error("Cannot open this folder")
         val files=mutableListOf<Input>();val seen=mutableSetOf<String>()
@@ -54,7 +66,7 @@ class Importer(private val context:Context,private val store:LibraryStore) {
     @Volatile private var running:kotlinx.coroutines.Job?=null
     /** Stops the import shown in [progress], whoever started it. Imports waiting for their turn still run. */
     fun cancelRunning() { running?.cancel() }
-    private suspend fun runImport(inputs:suspend () -> List<Input>):ImportProgress = withContext(Dispatchers.IO) { mutex.withLock {
+    private suspend fun runImport(scope:String="",inputs:suspend () -> List<Input>):ImportProgress = withContext(Dispatchers.IO) { mutex.withLock {
         running=coroutineContext[kotlinx.coroutines.Job]
         state.value=ImportProgress(true,"Scanning files")
         val errors=mutableListOf<String>();val temporaryCovers=mutableSetOf<String>();var done=0
@@ -68,14 +80,9 @@ class Importer(private val context:Context,private val store:LibraryStore) {
                 state.value=state.value.copy(current=input.name,done=done++)
                 runCatching { inspect(input) }.onSuccess { info+=it;if(it.cover.isNotBlank()) temporaryCovers+=it.cover }.onFailure { errors+="${input.name}: ${it.message ?: "Could not read audio"}" }
             }
-            // Album tags identify books across picker methods. Untagged whole-book containers stay separate.
-            val groups=info.groupBy {
-                when {
-                    it.album.isNotBlank() -> "album:${it.album.trim().lowercase()}:${it.author.trim().lowercase()}"
-                    it.input.name.substringAfterLast('.').lowercase() in setOf("m4b","mp4") || it.chapters.size>1 -> "file:${identity(it.input.uri)}"
-                    it.input.folder.isNotEmpty() -> "folder:${identity(Uri.parse(it.input.folder))}"
-                    else -> "file:${identity(it.input.uri)}"
-                }
+            val groups=info.groupBy { item ->
+                val folder=item.input.folder.takeIf { it.isNotEmpty() }?.let { path -> { identity(Uri.parse(path)) } }
+                source(scope,item.album,item.author,item.input.name.substringAfterLast('.').lowercase() in setOf("m4b","mp4") || item.chapters.size>1,folder) { identity(item.input.uri) }
             }
             var imported=0
             for((source,group) in groups) {
@@ -99,7 +106,7 @@ class Importer(private val context:Context,private val store:LibraryStore) {
                 var coverPath=existingCover.ifBlank { ordered.firstOrNull { it.cover.isNotBlank() }?.cover.orEmpty() }
                 if(coverPath.isBlank()) first.input.siblings.firstOrNull { it.name?.lowercase() in setOf("cover.jpg","cover.png","folder.jpg","folder.png") }?.let { cover -> runCatching { context.contentResolver.openInputStream(cover.uri)?.use { coverPath=saveCover(it.readBounded(8*1024*1024));if(coverPath.isNotBlank()) temporaryCovers+=coverPath } } }
                 val parentName=first.input.folderName.ifBlank { null }
-                val title=first.album.ifBlank { if(source.startsWith("folder:")) parentName ?: first.title else first.title }.ifBlank { first.input.name.substringBeforeLast('.') }
+                val title=first.album.ifBlank { if(source.removePrefix(scope).startsWith("folder:")) parentName ?: first.title else first.title }.ifBlank { first.input.name.substringBeforeLast('.') }
                 runCatching { store.add(Book(title=title,author=first.author,narrator=first.narrator,genre=first.genre,cover=coverPath,source=source,duration=offset,description=first.description,collection=first.series,format=ordered.map { it.input.name.substringAfterLast('.').uppercase() }.distinct().joinToString(" / "),size=ordered.sumOf { it.input.size }),tracks,chapters) }.onSuccess { imported++ }.onFailure { errors+="$title: ${it.message}";if(coverPath.isNotEmpty() && coverPath!=existingCover) File(coverPath).delete() }
             }
             state.value=ImportProgress(false,"Imported $imported ${if(imported==1) "book" else "books"}",candidates.size,candidates.size,errors)

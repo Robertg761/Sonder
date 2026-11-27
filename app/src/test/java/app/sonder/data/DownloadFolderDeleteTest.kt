@@ -80,4 +80,30 @@ class DownloadFolderDeleteTest {
         assertTrue(downloads.deleteBookFolder(listOf(FakeDocuments.document("primary:Audiobooks/Project Hail Mary/01.m4b"))))
         assertEquals(listOf("primary:Audiobooks/Project Hail Mary"),docs.deleted)
     }
+    @Test fun aFinishedDownloadWhoseBookWasRemovedCanBeDownloadedAgain() {
+        FakeDocuments.install(context).apply { writable+=listOf("primary:Audiobooks/Project Hail Mary","primary:Audiobooks/Project Hail Mary/01.m4b") }
+        val downloads=downloads(job(DownloadJob.State.DONE))
+        val track=FakeDocuments.document("primary:Audiobooks/Project Hail Mary/01.m4b").toString()
+        assertNotNull("Still in the library, so still downloaded",downloads.blocked("ad5f",setOf(track)))
+        assertEquals(1,downloads.jobs.value.size)
+        // Removed from the library, files left on the phone.
+        assertNull(downloads.blocked("ad5f",emptySet()))
+        assertTrue(downloads.jobs.value.isEmpty())
+    }
+    @Test fun aFinishedDownloadWhoseFilesWereDeletedOneByOneCanBeDownloadedAgain() {
+        // As when the book also held tracks from elsewhere, so its folder couldn't be deleted whole.
+        FakeDocuments.install(context).apply { writable+="primary:Audiobooks/Project Hail Mary" }
+        val downloads=downloads(job(DownloadJob.State.DONE))
+        assertNull(downloads.blocked("ad5f",setOf(FakeDocuments.document("primary:Audiobooks/Onyx Storm/01.mp3").toString())))
+        assertTrue(downloads.jobs.value.isEmpty())
+    }
+    @Test fun removingABookForgetsOnlyItsOwnFinishedDownload() {
+        FakeDocuments.install(context).apply { writable+=listOf("primary:Audiobooks/Project Hail Mary/01.m4b","primary:Audiobooks/Onyx Storm/01.mp3") }
+        val other=DownloadJob(title="Onyx Storm",hash="0e57",magnet="magnet:?xt=urn:btih:0e57",state=DownloadJob.State.DONE,folder=FakeDocuments.document("primary:Audiobooks/Onyx Storm").toString())
+        val failed=DownloadJob(title="Iron Flame",hash="1f1a",magnet="magnet:?xt=urn:btih:1f1a",state=DownloadJob.State.FAILED,folder=FakeDocuments.document("primary:Audiobooks/Iron Flame").toString())
+        val downloads=downloads(job(DownloadJob.State.DONE),other,failed)
+        downloads.forgetRemoved(setOf(FakeDocuments.document("primary:Audiobooks/Onyx Storm/01.mp3").toString()))
+        assertEquals(listOf("0e57","1f1a"),downloads.jobs.value.map { it.hash })
+        assertEquals("Without a library to check, a finished download still blocks","You've already downloaded this book. Remove it from Downloads to get it again.",downloads.blocked("0e57"))
+    }
 }
