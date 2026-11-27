@@ -76,11 +76,28 @@ class Downloads(private val context:Context,private val importer:Importer) {
     fun saveSite(site:String) { val value=AudioBookBay.site(site);prefs.edit().putString("site",value).apply();settingsState.value=settingsState.value.copy(site=value) }
     suspend fun verify(token:String):RealDebrid.User = withContext(Dispatchers.IO) { RealDebrid(token.trim()).user() }
 
-    /** Why a book can't be downloaded again, or null when it can. */
-    fun blocked(hash:String):String? = when(jobState.value.firstOrNull { it.hash==hash }?.state) {
-        DownloadJob.State.QUEUED,DownloadJob.State.WORKING -> "This book is already downloading."
-        DownloadJob.State.DONE -> "You've already downloaded this book. Remove it from Downloads to get it again."
-        else -> null
+    /**
+     * Why a book can't be downloaded again, or null when it can. Given the [library]'s track URIs, a finished
+     * download whose book is no longer in the library doesn't count, and is forgotten.
+     */
+    fun blocked(hash:String,library:Set<String>?=null):String? {
+        if(library!=null) forgetRemoved(library) { it.hash==hash }
+        return when(jobState.value.firstOrNull { it.hash==hash }?.state) {
+            DownloadJob.State.QUEUED,DownloadJob.State.WORKING -> "This book is already downloading."
+            DownloadJob.State.DONE -> "You've already downloaded this book. Remove it from Downloads to get it again."
+            else -> null
+        }
+    }
+    /**
+     * Forgets finished downloads whose book folder holds none of the [library]'s tracks any more, as after the book
+     * was removed or deleted, so it can be downloaded again. Its folder stays known to Delete from phone.
+     */
+    fun forgetRemoved(library:Set<String>,which:(DownloadJob)->Boolean={ true }) {
+        val keys=library.mapNotNull { key(Uri.parse(it)) }.toSet()
+        // A folder that can't be listed any more was deleted, and its book with it.
+        val gone=jobState.value.filter { it.state==DownloadJob.State.DONE && it.folder.isNotBlank() && which(it) }
+            .filter { job -> children(Uri.parse(job.folder))?.none { it in keys } ?: true }.map { it.id }.toSet()
+        if(gone.isNotEmpty()) synchronized(lock) { publish(jobState.value.filterNot { it.id in gone && it.state==DownloadJob.State.DONE }) }
     }
     /**
      * Queues a download, on the Real-Debrid [torrent] that [preflight] found usable when there is one.
@@ -232,9 +249,6 @@ class Downloads(private val context:Context,private val importer:Importer) {
      */
     fun deleteBookFolder(tracks:List<Uri>,others:List<Uri> = emptyList()):Boolean {
         if(tracks.isEmpty()) return false
-        // Document IDs are opaque, so membership comes from the provider's own child listing. Downloads are
-        // flattened, so every track is a direct child of its book folder.
-        fun key(uri:Uri)=runCatching { "${uri.authority}|${android.provider.DocumentsContract.getDocumentId(uri)}" }.getOrNull()
         val ids=tracks.map { key(it) ?: return false }.toSet()
         val running=jobState.value.filter { it.active }.map { it.folder }.toSet()
         val candidates=bookFolders().filter { it !in running && Uri.parse(it).authority==tracks.first().authority }
@@ -244,6 +258,9 @@ class Downloads(private val context:Context,private val importer:Importer) {
         if(deleted) { keepFolder(folder,false);synchronized(lock) { publish(jobState.value.filterNot { it.folder==folder }) } }
         return deleted
     }
+    // Document IDs are opaque, so membership comes from the provider's own child listing. Downloads are
+    // flattened, so every track is a direct child of its book folder.
+    private fun key(uri:Uri)=runCatching { "${uri.authority}|${android.provider.DocumentsContract.getDocumentId(uri)}" }.getOrNull()
     private fun children(folder:Uri):Set<String>? = runCatching {
         val provider=android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(folder,android.provider.DocumentsContract.getDocumentId(folder))
         context.contentResolver.query(provider,arrayOf(android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID),null,null,null)?.use { c -> buildSet { while(c.moveToNext()) add("${folder.authority}|${c.getString(0)}") } }

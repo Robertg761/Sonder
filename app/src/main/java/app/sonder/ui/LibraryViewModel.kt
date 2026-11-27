@@ -206,7 +206,12 @@ class LibraryViewModel(application:Application,private val saved:androidx.lifecy
             offerUndo("Marked as ${status.label.lowercase()}") { perform { store.restoreStatus(before) } }
         }
     }
-    private suspend fun removeBook(book:Book) { if(playback.value.bookId==book.id) { controller?.stop();controller?.clearMediaItems() };store.remove(book.id);if(book.cover.isNotEmpty()) withContext(Dispatchers.IO) { File(book.cover).delete() } }
+    private suspend fun removeBook(book:Book) {
+        if(playback.value.bookId==book.id) { controller?.stop();controller?.clearMediaItems() }
+        store.remove(book.id);if(book.cover.isNotEmpty()) withContext(Dispatchers.IO) { File(book.cover).delete() }
+        // The book's finished download is forgotten, so it can be downloaded again.
+        val library=store.knownUris();withContext(Dispatchers.IO) { downloads.forgetRemoved(library) }
+    }
     fun remove(book:Book) { perform { removeBook(book);notice("Removed from library. The original audio files are unchanged.") } }
     private val deleteState=MutableStateFlow<PendingDelete?>(null)
     val pendingDelete=deleteState.asStateFlow()
@@ -287,7 +292,12 @@ class LibraryViewModel(application:Application,private val saved:androidx.lifecy
     fun openListing(listing:AudioBookBay.Listing) {
         detailJob?.cancel();detailState.value=FindDetails(listing)
         detailJob=viewModelScope.launch(errorHandler) {
-            try { val details=withContext(Dispatchers.IO) { AudioBookBay.details(downloads.settings.value.site,listing) };detailState.value=detailState.value?.takeIf { it.listing==listing }?.copy(details=details) }
+            try {
+                val details=withContext(Dispatchers.IO) { AudioBookBay.details(downloads.settings.value.site,listing) }
+                // A finished download of a book that has since left the library shows as downloadable again.
+                val library=store.knownUris();withContext(Dispatchers.IO) { downloads.forgetRemoved(library) { it.hash==details.hash } }
+                detailState.value=detailState.value?.takeIf { it.listing==listing }?.copy(details=details)
+            }
             catch(e:CancellationException) { throw e }
             catch(e:Exception) { detailState.value=detailState.value?.takeIf { it.listing==listing }?.copy(error=e.message ?: "Couldn't open this book. Try again.") }
         }
@@ -304,11 +314,13 @@ class LibraryViewModel(application:Application,private val saved:androidx.lifecy
     /** Retries a stopped download, checking for seeders first just like a new one. */
     fun retry(job:app.sonder.download.DownloadJob) = checked(job.hash,job.title,job.magnet) { downloads.retry(job.id,it);null }
     private fun checked(hash:String,title:String,magnet:String,queue:(String)->String?) {
-        downloads.blocked(hash)?.let { notice(it);return }
         if(hash in checkState.value) return
         checkState.update { it+hash }
         viewModelScope.launch(errorHandler) {
             try {
+                // A finished download only blocks while its book is still in the library.
+                val library=store.knownUris()
+                withContext(Dispatchers.IO) { downloads.blocked(hash,library) }?.let { notice(it);return@launch }
                 val torrent=downloads.preflight(hash,magnet)
                 runCatching { queue(torrent) }.onSuccess { notice(it ?: "Downloading $title. It will appear in your library when it's ready.") }
                     .onFailure { android.util.Log.e("Sonder","Could not start download",it);notice("Couldn't start the download. Open Sonder and try again.") }
